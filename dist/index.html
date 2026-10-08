@@ -8,7 +8,7 @@
   <title>도로명변환기</title>
   <link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2">
   <link rel="icon" type="image/png" href="./icon-192.png?v=2">
-  <link rel="stylesheet" href="./style.css?v=15">
+  <link rel="stylesheet" href="./style.css?v=16">
 </head>
 <body>
  <main class="app-shell">
@@ -50,6 +50,9 @@
  </main>
  <dialog id="settingsDialog"><div class="dialog-head"><h2 class="settings-title"><img src="./jebichan-icon.png" alt="" width="30" height="30">설정</h2><span id="appVersionBadge" class="version-badge"></span><button id="closeSettings" class="iconbutton" aria-label="설정 닫기">×</button></div>
   <label class="toggle"><input type="checkbox" id="continuousScan">연속 스캔</label>
+  <h3>변환 알림</h3>
+  <label class="toggle" id="alertVibrationRow"><input type="checkbox" id="alertVibration">진동</label>
+  <label class="toggle"><input type="checkbox" id="alertSound">소리</label>
   <h3>우선 인식 지역</h3>
   <div class="setting-group"><label for="regionProvince">시·도</label><select id="regionProvince"><option value="">전체</option></select></div>
   <div class="setting-group"><label for="regionCity" id="regionCityLabel">시·군</label><select id="regionCity" disabled><option value="">전체</option></select></div>
@@ -63,6 +66,8 @@
   <div class="setting-group"><label for="mapProvider">지도 앱</label><select id="mapProvider"><option value="naver">네이버지도</option><option value="kakao">카카오맵</option></select></div>
   <h3>인식</h3>
   <div class="setting-group"><label for="engine">인식 방식</label><select id="engine"><option value="paddle">PaddleOCR · 한국어</option><option value="tesseract">Tesseract · 한국어 + 영어</option><option value="compare">두 방식 비교</option></select></div>
+  <label class="toggle"><input type="checkbox" id="memoryToggle">내 수정 기억<small>직접 입력하거나 고친 주소의 이름을 기억해, 같은 글자가 다시 잘못 읽히면 자동으로 넣습니다. 번지와 동·호수는 저장하지 않습니다.</small></label>
+  <button id="clearMemory" class="secondary wide">기억 지우기</button><p id="memoryMessage" class="cache-message" role="status"></p>
   <label class="toggle"><input type="checkbox" id="developerMode">개발자 모드</label>
   <h3>버튼 표시</h3>
   <div id="buttonSettings"></div>
@@ -70,14 +75,14 @@
   <div class="setting-status"><span>앱 버전</span><span id="appVersion"></span></div>
   <div class="setting-status"><span>현재 주소 사전</span><span id="dictionaryVersion">불러오는 중</span></div>
   <button id="checkDictionary" class="secondary wide">주소 사전 업데이트 확인</button><p id="dictionaryMessage" class="cache-message" role="status"></p>
-  <div class="setting-list"><button id="helpButton">사용 방법 <span aria-hidden="true">›</span></button></div>
+  <div class="setting-list"><button id="feedbackButton">의견 보내기 <span aria-hidden="true">›</span></button><button id="helpButton">사용 방법 <span aria-hidden="true">›</span></button></div>
   <p id="cacheMessage" class="cache-message" role="status"></p>
   <div class="setting-status"><span>연결 상태</span><span id="offlineState">온라인</span></div>
   <h3>공유</h3>
   <img class="share-qr" src="./share-qr.png" alt="도로명변환기 주소 QR 코드" width="220" height="220" loading="lazy"></dialog>
  <dialog id="help"><div class="dialog-head"><h2>사용 방법</h2><button id="closeHelp" class="iconbutton" aria-label="닫기">×</button></div><ol><li>주소를 네모칸에 맞추면 자동으로 인식합니다. 주소가 하나면 바로 변환합니다.</li><li>여러 개면 <b>인식 후보</b>에서 고르세요. 다음 우편물은 <b>다시 인식</b>.</li><li>자동 인식이 어려우면 <b>화면 정지</b> 후 사진 위를 드래그하고 <b>인식하기</b>.</li><li>직접 고친 주소는 <b>주소 변환</b>으로 다시 찾습니다.</li></ol><p>주소 변환에는 인터넷이 필요합니다. 기본 VWorld 키가 들어 있고, 설정에 개인 키를 넣으면 그 키를 씁니다.</p><p>홈 화면 설치: Safari 공유 메뉴 → 홈 화면에 추가. 설치한 앱에서 오프라인 준비가 끝나면 인터넷 없이 인식·후보 선택이 됩니다.</p><a href="./licenses.txt" target="_blank" rel="noopener">오픈소스 및 모델 출처</a></dialog>
- <!-- Anonymous launch count (GoatCounter, no cookies): only /app (home-screen) or /web (browser) is sent, never addresses or photos. -->
+ <!-- Anonymous counts (GoatCounter, no cookies): only /app (home-screen) or /web (browser), plus /ok or /fail for a lookup; never addresses or photos. -->
  <script>window.goatcounter={path:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'/app':'/web',title:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'홈 화면 앱':'브라우저'};</script>
  <script data-goatcounter="https://greatrima.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
- <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=15"></script>
+ <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=16"></script>
 </body></html>

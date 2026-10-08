@@ -1,11 +1,12 @@
 {
   "required": [
     "./index.html",
-    "./app.js?v=15",
-    "./style.css?v=15",
+    "./app.js?v=16",
+    "./style.css?v=16",
     "./address-core.mjs",
     "./address-convert.mjs",
     "./address-suggest.mjs",
+    "./address-memory.mjs",
     "./address-dictionary.mjs",
     "./dictionary-worker.mjs",
     "./ocr-core.js",

@@ -107,6 +107,10 @@ self.onmessage = async ({data}) => {
       const corrected = (data.blocks || []).flatMap(block => engine.candidates([block], region)).map(c => ({...c, manualOnly: true}));
       // Region-aware sound-alike locality suggestions first (눈극동 → 눤곡동), then the Android engine's corrections.
       result = [...localityCandidates(data.raw || [], region), ...corrected];
+    } else if (type === 'names') {
+      // Setting "내 수정 기억": which of these words are real names (a real name is never learned as a misreading).
+      await ready();
+      result = (data.names || []).map(name => dictionary.isExactAddressName(name));
     } else if (type === 'update') result = await checkUpdate();
     else throw new Error(`unknown ${type}`);
     postMessage({id, result});

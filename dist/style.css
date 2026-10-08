@@ -53,6 +53,8 @@ input[type=range]{width:100%;accent-color:var(--pink);min-width:30px;height:20px
 .converted-text{margin:0;font-size:17px;line-height:1.55;font-weight:600;color:#17202b;word-break:keep-all;overflow-wrap:anywhere}
 .converted-text.success{color:var(--success);font-weight:700}
 .converted-text.failure{color:var(--failure)}
+.converted-region{font-size:13px;font-weight:600;color:var(--muted)}
+.converted-name{font-size:26px;line-height:1.25}
 .status-text{margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--muted);min-height:1em}
 .status-text:empty{display:none}
 .status-text a{color:#963360;font-weight:700}

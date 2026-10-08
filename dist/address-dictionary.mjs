@@ -63,6 +63,24 @@ export class AddressDictionary {
     this.buckets = buckets;
     this.version = version;
     this.matchCache = new Map();
+    this.exactNames = null;
+  }
+
+  /** Exact names only, no fuzzy correction: provinces, districts and their words, localities and roads. */
+  isExactAddressName(value) {
+    if (!this.exactNames) {
+      const names = this.exactNames = new Set();
+      for (const [province, districts] of this.buckets) {
+        names.add(province);
+        for (const [district, bucket] of districts) {
+          names.add(district.replace(/ /g, ''));
+          for (const part of district.split(' ')) names.add(part);
+          for (const locality of bucket.localities) names.add(locality);
+          for (const road of bucket.roads.keys()) names.add(road);
+        }
+      }
+    }
+    return this.exactNames.has(value.replace(/\s+/g, ''));
   }
 
   static fromObject(object, version = 'test') {

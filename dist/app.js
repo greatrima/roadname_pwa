@@ -4,10 +4,11 @@ import {
   automaticCandidate, assembleElements, rowsFromBoxes, CandidateTracker, AutoConversionPolicy, isSameAddressFamily,
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
+import {AddressMemory, numberedWords} from './address-memory.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.0';
+const APP_VERSION = '1.1';
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
 let stream = null, hasPhoto = false, crop = null, drag = null, busy = false, job = 0, paddle = null, paddleReject = null, tess = null, cacheBusy = false;
@@ -15,7 +16,8 @@ let stream = null, hasPhoto = false, crop = null, drag = null, busy = false, job
 // ---- device-local settings ----
 const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vworld: 'roadname-vworld-key', vworldDefault: 'roadname-vworld-default',
   kakao: 'roadname-kakao-key', map: 'roadname-map', engine: 'roadname-engine', continuous: 'roadname-continuous', offline: 'roadname-offline',
-  developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed'};
+  developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
+  alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -129,7 +131,16 @@ function setInput(text) { $('addressInput').value = text; $('copyAddress').disab
 function setStatus(text) { $('statusText').textContent = text || ''; }
 function showDetails(details) { $('detailText').hidden = !details; $('detailText').textContent = details ? `상세주소·건물: ${details}` : ''; }
 function setMapAddress(address) { mapAddress = address; $('mapButton').disabled = !address; $('copyResult').disabled = !address; }
-function setConverted(text, tone = '') { $('convertedText').textContent = text; $('convertedText').className = `converted-text${tone ? ` ${tone}` : ''}`; }
+function setConverted(text, tone = '') {
+  const view = $('convertedText'), name = tone === 'success' ? parseParts(text)?.name : null, start = name ? text.indexOf(name) : -1;
+  view.className = `converted-text${tone ? ` ${tone}` : ''}`;
+  if (start < 0) { view.textContent = text; return; }
+  // What is read on the street large ("달선로 50"), the 시·도/시·군·구 before it small; the text is still the whole address.
+  const region = document.createElement('span'), main = document.createElement('span');
+  region.className = 'converted-region'; region.textContent = text.slice(0, start);
+  main.className = 'converted-name'; main.textContent = text.slice(start);
+  view.replaceChildren(region, main);
+}
 function resetResult() { setMapAddress(null); setConverted(WAITING_RESULT); }
 function setConverting(value) { converting = value; $('convertButton').disabled = value || busy || cacheBusy; }
 const offlineStatus = () => '오프라인 · 주소 인식과 후보 선택은 사용할 수 있습니다.';
@@ -184,8 +195,8 @@ function acceptCandidate(c, {manual = true} = {}) {
   if (!continuousScan()) stopScanning();
   setInput(c.text + (c.details ? ` ${c.details}` : '')); showDetails(c.details);
   renderCandidates(uniqueCandidates([c, ...alternatives]));
-  if (chosen) { requestSeq++; setConverting(false); showSuccess(chosen); }
-  else void convertAddress(c.text);
+  if (chosen) { requestSeq++; setConverting(false); showSuccess(chosen); void learnConfirmed(chosen, true); }
+  else void convertAddress(c.text, manual);
 }
 
 function submitManualAddress() {
@@ -195,7 +206,8 @@ function submitManualAddress() {
   acceptCandidate({...found, text, details: extractDetails(raw, found.text)});
 }
 
-async function convertAddress(raw) {
+/** confirmed: typed, corrected or chosen by the user, so a found address may be remembered. */
+async function convertAddress(raw, confirmed = false) {
   const parsed = extract(raw) ?? raw.trim();
   if (!parsed || parseParts(parsed)?.number == null) { setStatus('도로명·지명과 건물번호·번지를 함께 입력해 주세요.'); return; }
   const id = ++requestSeq;
@@ -207,11 +219,15 @@ async function convertAddress(raw) {
   if (id !== requestSeq) return;
   setConverting(false);
   switch (result.type) {
-    case 'success': showSuccess(result.result); break;
+    case 'success':
+      countOutcome(true); showSuccess(result.result);
+      if (confirmed) void learnConfirmed(result.result, true);
+      else { unconfirmed = result.result; showAppliedCorrection(result.result); }
+      break;
     case 'apiKeyMissing': showError('주소 변환용 API 키가 없습니다. 설정에서 등록해 주세요.'); break;
-    case 'notFound': showError('일치하는 주소 없음'); break;
+    case 'notFound': countOutcome(false); showError('일치하는 주소 없음'); break;
     case 'noExactMatch': {
-      showError('일치하는 주소 없음');
+      countOutcome(false); showError('일치하는 주소 없음');
       apiAlternatives.clear();
       const similar = result.suggestions.map(r => {
         const c = makeCandidate(r.recognizedAddress, r.recognizedKind, {confidence: 0, manualOnly: true, alternativeTarget: r.convertedAddress});
@@ -222,8 +238,8 @@ async function convertAddress(raw) {
       renderCandidates(uniqueCandidates([...(selected ? [selected] : []), ...similar]));
       break;
     }
-    case 'offline': showLocalResult(true); break;
-    default: showLocalResult(!online(), `주소 서버에 연결하지 못했습니다. ${result.message}`);
+    case 'offline': signal(false); showLocalResult(true); break;
+    default: signal(false); showLocalResult(!online(), `주소 서버에 연결하지 못했습니다. ${result.message}`);
   }
 }
 
@@ -231,12 +247,78 @@ function showSuccess(r) {
   awaitingNetwork = false; setMapAddress(r.convertedAddress); diag.finish('완료', r.convertedAddress);
   setConverted(r.convertedAddress, 'success');
   setStatus(`${SOURCE_LABEL[r.source]}에서 확인된 주소입니다.`);
+  signal(true);
 }
 function showError(message) {
   awaitingNetwork = false; setMapAddress(null); diag.finish('검색 실패', message);
   const notFound = message === '일치하는 주소 없음';
   setConverted(notFound ? message : '변환할 수 없습니다', 'failure');
   setStatus(notFound ? '' : message);
+  signal(false);
+}
+
+// ---- setting "내 수정 기억": names and corrections the user confirmed by hand, on this device only ----
+const memory = new AddressMemory(store.get(KEYS.memory));
+const memoryOn = () => !flag(KEYS.memoryOff);
+let appliedCorrections = [], unconfirmed = null;
+/** Remembers the confirmed address's name; `corrected` also learns the word the camera read for it. */
+async function learnConfirmed(r, corrected) {
+  unconfirmed = null;
+  if (!memoryOn()) return;
+  const parts = parseParts(r.recognizedAddress);
+  if (!parts) return;
+  memory.rememberName(parts.name);
+  const source = lastOcr?.text || '', words = corrected && parts.number != null ? numberedWords(source) : [];
+  if (words.length) {
+    // Without the dictionary nothing is learned: a real name must never become a misreading.
+    const real = await dictionaryCall('names', {names: words}).catch(() => null);
+    if (real) memory.learnFromSource(source, parts.name, parts.number, word => real[words.indexOf(word)] !== false);
+  }
+  store.set(KEYS.memory, memory.serialize());
+}
+/** Tells that the shown address came from a remembered correction. */
+function showAppliedCorrection(r) {
+  const name = parseParts(r.recognizedAddress)?.name, applied = appliedCorrections.find(a => a.corrected === name);
+  if (applied) setStatus(`내 수정 적용 · ${applied.misread} → ${applied.corrected}`);
+}
+/** Using a result that was converted by itself (copy, map) confirms it. */
+function confirmUse() { if (unconfirmed) void learnConfirmed(unconfirmed, false); }
+/** Remembered names first; the order is otherwise kept. */
+function preferRemembered(list) {
+  if (!memoryOn() || memory.isEmpty) return list;
+  const weight = c => memory.weight(parseParts(c.text)?.name || '');
+  return list.map((c, i) => [c, i]).sort((x, y) => weight(y[0]) - weight(x[0]) || x[1] - y[1]).map(x => x[0]);
+}
+
+// ---- conversion signal: a short tone and one vibration when converted, two vibrations and no tone when not ----
+// iPhone Safari cannot vibrate, and plays sound only after a touch and with the ringer switch on.
+let audio = null;
+function unlockAudio() {
+  try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') void audio.resume(); } catch {}
+}
+addEventListener('pointerdown', unlockAudio, {passive: true});
+function signal(ok) {
+  if (navigator.vibrate && !flag(KEYS.alertVibrationOff)) { try { navigator.vibrate(ok ? 40 : [70, 90, 70]); } catch {} }
+  // A failure is told by vibration alone; where the phone cannot vibrate (iPhone) a low tone takes its place.
+  if (flag(KEYS.alertSoundOff) || (!ok && navigator.vibrate)) return;
+  try {
+    unlockAudio();
+    if (audio?.state !== 'running') return;
+    const tone = audio.createOscillator(), gain = audio.createGain(), now = audio.currentTime, length = ok ? 0.12 : 0.28;
+    tone.frequency.value = ok ? 1320 : 330;
+    gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01); gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
+    tone.connect(gain).connect(audio.destination); tone.start(now); tone.stop(now + length + 0.01);
+  } catch {}
+}
+// Anonymous count of lookups that converted or found nothing: only the fixed path is sent, never the address.
+// The counter keeps one per visitor and path, so one of each per opening is enough.
+const counted = {ok: false, fail: false};
+function countOutcome(ok) {
+  const key = ok ? 'ok' : 'fail';
+  if (counted[key] || !window.goatcounter?.count) return;
+  counted[key] = true;
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  try { window.goatcounter.count({path: `${standalone ? '/app' : '/web'}/${key}`, title: ok ? '변환 성공' : '변환 실패', event: true}); } catch {}
 }
 /** OCR/candidate selection is valid local work, not proof of a real address. */
 function showLocalResult(offline, message = '') {
@@ -247,8 +329,10 @@ function showLocalResult(offline, message = '') {
 
 function candidatesFromResult(result, region) {
   diag.trace = [];
-  if (!result.lines?.length) return {raw: candidatesFromBlocks([result.text], region), blocks: [result.text]};
-  const blocks = assembleElements(rowsFromBoxes(result.lines), developerMode() ? diag.trace : null);
+  appliedCorrections = [];
+  const remembered = text => { if (!memoryOn()) return text; const r = memory.apply(text); appliedCorrections.push(...r.applied); return r.text; };
+  if (!result.lines?.length) { const text = remembered(result.text); return {raw: candidatesFromBlocks([text], region), blocks: [text]}; }
+  const blocks = assembleElements(rowsFromBoxes(result.lines.map(line => ({...line, text: remembered(line.text)}))), developerMode() ? diag.trace : null);
   return {raw: candidatesFromSpatialBlocks(blocks, region), blocks: blocks.map(b => b.text)};
 }
 
@@ -259,7 +343,7 @@ async function handleOcr(result) {
   const {raw, blocks} = candidatesFromResult(result, region);
   latestRaw = raw;
   diag.observe(result, raw);
-  const dictionary = await dictionaryCandidates(blocks, raw, region);
+  const dictionary = preferRemembered(await dictionaryCandidates(blocks, raw, region));
   if (lastOcr !== result) return;
   requestSeq++; setConverting(false); selected = null; awaitingNetwork = false; apiAlternatives.clear(); tracker.clear(); autoPolicy.reset();
   renderCandidates(uniqueCandidates([...raw, ...dictionary]).slice(0, 5));
@@ -319,7 +403,7 @@ async function onLiveResult(result, now, gen) {
   if (automatic) {
     tracker.unfreeze(true); acceptCandidate(automatic, {manual: false});
     // Android keeps the frame's dictionary alternatives selectable next to the automatic choice.
-    const accepted = selected, dictionary = await dictionaryCandidates(blocks, raw, region);
+    const accepted = selected, dictionary = preferRemembered(await dictionaryCandidates(blocks, raw, region));
     if (selected !== accepted || apiAlternatives.size || !raw.some(c => !c.manualOnly && isSameAddressFamily(c, accepted))) return;
     const alternatives = uniqueCandidates([...displayed, ...raw, ...dictionary]);
     tracker.freeze(accepted, alternatives); renderCandidates(uniqueCandidates([accepted, ...alternatives]));
@@ -598,8 +682,10 @@ $('addressInput').oninput = () => {
   $('copyAddress').disabled = !$('addressInput').value.trim();
 };
 $('copyAddress').onclick = () => copyText($('addressInput').value, '인식한 주소를 복사했습니다.');
-$('copyResult').onclick = () => { if (mapAddress) void copyText(mapAddress, '변환 주소를 복사했습니다.'); };
-$('mapButton').onclick = openMap;
+$('copyResult').onclick = () => { if (mapAddress) { void copyText(mapAddress, '변환 주소를 복사했습니다.'); confirmUse(); } };
+// The whole result is the copy target: easier than the small icon with one hand.
+$('convertedText').onclick = () => $('copyResult').onclick();
+$('mapButton').onclick = () => { openMap(); if (mapAddress) confirmUse(); };
 function openSettings(focus) {
   $('vworldKey').value = store.get(KEYS.vworld); $('kakaoKey').value = store.get(KEYS.kakao); $('keyMessage').textContent = ''; $('dictionaryMessage').textContent = '';
   $('vworldKey').placeholder = store.get(KEYS.vworldDefault) ? '기본 키 사용 중' : '설정 안 됨';
@@ -619,6 +705,25 @@ $('mapProvider').onchange = () => store.set(KEYS.map, $('mapProvider').value);
 $('engine').value = store.get(KEYS.engine) || 'paddle'; $('engine').onchange = () => { store.set(KEYS.engine, $('engine').value); updateScanUi(); };
 bindToggle('continuousScan', KEYS.continuous, () => { if (liveCamera() && !scanning && !selected) startScanning(); updateScanUi(); });
 bindToggle('developerMode', KEYS.developer, () => diag.render());
+// Both alerts are on until switched off; a browser that cannot vibrate (iPhone) shows only the sound switch.
+for (const [id, key] of [['alertVibration', KEYS.alertVibrationOff], ['alertSound', KEYS.alertSoundOff]]) {
+  $(id).checked = !flag(key);
+  $(id).onchange = () => store.set(key, $(id).checked ? '' : '1');
+}
+$('alertVibrationRow').hidden = !navigator.vibrate;
+$('memoryToggle').checked = memoryOn();
+$('memoryToggle').onchange = () => store.set(KEYS.memoryOff, $('memoryToggle').checked ? '' : '1');
+$('clearMemory').onclick = () => { memory.clear(); store.set(KEYS.memory, ''); $('memoryMessage').textContent = '기억을 지웠습니다.'; };
+// Keep the screen on while the app is in front (mail in the other hand); the browser releases it when hidden.
+let wakeLock = null;
+async function keepAwake() {
+  if (wakeLock || document.visibilityState !== 'visible' || !navigator.wakeLock) return;
+  try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } catch {}
+}
+document.addEventListener('visibilitychange', keepAwake);
+addEventListener('pointerdown', keepAwake, {passive: true});
+void keepAwake();
+$('feedbackButton').onclick = () => { window.open('https://open.kakao.com/o/sPEPFpRi', '_blank', 'noopener'); };
 store.set(KEYS.offline, ''); // the manual offline mode was removed; never leave an old setting active
 $('checkDictionary').onclick = () => updateDictionary(true);
 $('helpButton').onclick = () => { $('settingsDialog').close(); $('help').showModal(); }; $('closeHelp').onclick = () => $('help').close();
