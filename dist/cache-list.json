@@ -1,8 +1,8 @@
 {
   "required": [
     "./index.html",
-    "./app.js?v=16",
-    "./style.css?v=16",
+    "./app.js?v=17",
+    "./style.css?v=17",
     "./address-core.mjs",
     "./address-convert.mjs",
     "./address-suggest.mjs",
