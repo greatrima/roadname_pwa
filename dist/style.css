@@ -113,6 +113,7 @@ select,.setting-group input{width:100%;padding:12px;border:1px solid #cbd3df;bor
 .setting-status{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-top:18px}
 .cache-message{font-size:13px;line-height:1.6;color:#536178;margin:6px 0 0}
 .cache-message:empty{display:none}
+#feedbackText{width:100%;padding:12px;border:1px solid #cbd3df;border-radius:10px;color:#17202b;font:inherit;font-size:16px;background:white;resize:vertical}
 footer{font-size:12px;line-height:1.75;display:grid;color:#627085;border-top:1px solid var(--line);padding-top:15px;margin-top:18px}
 dialog ol{padding-left:22px;font-size:15px}
 dialog li{margin:10px 0}

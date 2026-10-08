@@ -8,7 +8,7 @@ import {AddressMemory, numberedWords} from './address-memory.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.2';
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
 let stream = null, hasPhoto = false, crop = null, drag = null, busy = false, job = 0, paddle = null, paddleReject = null, tess = null, cacheBusy = false;
@@ -723,7 +723,24 @@ async function keepAwake() {
 document.addEventListener('visibilitychange', keepAwake);
 addEventListener('pointerdown', keepAwake, {passive: true});
 void keepAwake();
-$('feedbackButton').onclick = () => { window.open('https://open.kakao.com/o/sPEPFpRi', '_blank', 'noopener'); };
+// "의견 보내기": a box to write in; the text and the app description go to the feedback form, nothing else.
+const FEEDBACK_FORM = 'https://docs.google.com/forms/d/e/1FAIpQLSdc_SGkk0MCH3nE05VGCSXsT0bUU2O7EC75uylUyge7TiA1Cw/formResponse';
+$('feedbackButton').onclick = () => { $('settingsDialog').close(); $('feedbackMessage').textContent = ''; $('feedbackDialog').showModal(); $('feedbackText').focus(); };
+$('closeFeedback').onclick = () => $('feedbackDialog').close();
+$('sendFeedback').onclick = async () => {
+  const text = $('feedbackText').value.trim().slice(0, 1000);
+  if (!text) { $('feedbackMessage').textContent = '의견을 입력해 주세요.'; return; }
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const info = `도로명변환기 웹 ${APP_VERSION} · ${standalone ? '홈 화면 앱' : '브라우저'} · ${navigator.userAgent}`.slice(0, 300);
+  $('sendFeedback').disabled = true;
+  try {
+    if (!online()) throw new Error('offline');
+    // The form answers another site, so the reply cannot be read: an accepted request is taken as sent.
+    await fetch(FEEDBACK_FORM, {method: 'POST', mode: 'no-cors', body: new URLSearchParams({'entry.166744206': text, 'entry.187592757': info})});
+    $('feedbackText').value = ''; $('feedbackDialog').close(); setStatus('의견을 보냈습니다.');
+  } catch { $('feedbackMessage').textContent = '보내지 못했습니다. 인터넷 연결을 확인해 주세요.'; }
+  $('sendFeedback').disabled = false;
+};
 store.set(KEYS.offline, ''); // the manual offline mode was removed; never leave an old setting active
 $('checkDictionary').onclick = () => updateDictionary(true);
 $('helpButton').onclick = () => { $('settingsDialog').close(); $('help').showModal(); }; $('closeHelp').onclick = () => $('help').close();

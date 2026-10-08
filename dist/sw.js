@@ -1,5 +1,5 @@
-const CACHE='roadname-assets-v17';
-const SHELL=['./index.html','./style.css?v=17','./app.js?v=17','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
+const CACHE='roadname-assets-v18';
+const SHELL=['./index.html','./style.css?v=18','./app.js?v=18','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
 const OPTIONAL=['./apple-touch-icon.png','./icon-192.png','./icon-512.png','./jebichan-icon.png','./share-qr.png','./licenses.txt'];
 const same=(a,b)=>new URL(a,self.location).pathname===b;
 self.addEventListener('install',event=>event.waitUntil((async()=>{

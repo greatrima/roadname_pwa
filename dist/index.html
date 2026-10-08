@@ -8,7 +8,7 @@
   <title>도로명변환기</title>
   <link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2">
   <link rel="icon" type="image/png" href="./icon-192.png?v=2">
-  <link rel="stylesheet" href="./style.css?v=17">
+  <link rel="stylesheet" href="./style.css?v=18">
 </head>
 <body>
  <main class="app-shell">
@@ -80,9 +80,13 @@
   <div class="setting-status"><span>연결 상태</span><span id="offlineState">온라인</span></div>
   <h3>공유</h3>
   <img class="share-qr" src="./share-qr.png" alt="도로명변환기 주소 QR 코드" width="220" height="220" loading="lazy"></dialog>
+ <dialog id="feedbackDialog"><div class="dialog-head"><h2>의견 보내기</h2><button id="closeFeedback" class="iconbutton" aria-label="닫기">×</button></div>
+  <textarea id="feedbackText" rows="6" maxlength="1000" aria-label="의견"></textarea>
+  <p id="feedbackMessage" class="cache-message" role="status"></p>
+  <button id="sendFeedback" class="primary wide">보내기</button></dialog>
  <dialog id="help"><div class="dialog-head"><h2>사용 방법</h2><button id="closeHelp" class="iconbutton" aria-label="닫기">×</button></div><ol><li>주소를 네모칸에 맞추면 자동으로 인식합니다. 주소가 하나면 바로 변환합니다.</li><li>여러 개면 <b>인식 후보</b>에서 고르세요. 다음 우편물은 <b>다시 인식</b>.</li><li>자동 인식이 어려우면 <b>화면 정지</b> 후 사진 위를 드래그하고 <b>인식하기</b>.</li><li>직접 고친 주소는 <b>주소 변환</b>으로 다시 찾습니다.</li></ol><p>주소 변환에는 인터넷이 필요합니다. 기본 VWorld 키가 들어 있고, 설정에 개인 키를 넣으면 그 키를 씁니다.</p><p>홈 화면 설치: Safari 공유 메뉴 → 홈 화면에 추가. 설치한 앱에서 오프라인 준비가 끝나면 인터넷 없이 인식·후보 선택이 됩니다.</p><a href="./licenses.txt" target="_blank" rel="noopener">오픈소스 및 모델 출처</a></dialog>
  <!-- Anonymous counts (GoatCounter, no cookies): only /app (home-screen) or /web (browser), plus /ok or /fail for a lookup; never addresses or photos. -->
  <script>window.goatcounter={path:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'/app':'/web',title:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'홈 화면 앱':'브라우저'};</script>
  <script data-goatcounter="https://greatrima.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
- <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=17"></script>
+ <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=18"></script>
 </body></html>
