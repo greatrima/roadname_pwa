@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   Kind, COMPLETE, candidate, extract, extractCandidate, extractCandidates, classify, restoreStructuredText, parseParts,
   exactMatch, relatedParcels, candidatesFromBlocks, candidatesFromSpatialBlocks, automaticCandidate, assembleLines,
-  assembleElements, rowsFromBoxes, identity,
+  assembleElements, rowsFromBoxes, identity, stripAddressLabels,
 } from '../dist/address-core.mjs';
 
 const region = {province: '경기도', district: '솔내시 푸록구'};
@@ -229,4 +229,41 @@ test('field report: base number line ending with a phone number', () => {
   assert.equal(extract('경기도 솔내시 새움구 모잔로\n12,205호(모잔동,구름상가)031-123-4567'), '경기도 솔내시 새움구 모잔로 12');
   // A phone number where the base number would be is still never a base number.
   assert.equal(automaticCandidate(pipeline(line('버들동', 10, 10, 240, 20), line('031 123 4567', 10, 38, 240, 20))), null);
+});
+
+test('parser: a spaced numbered road is never cut to another road address (as on Android)', () => {
+  const texts = t => extractCandidates(t).map(c => c.text);
+  assert.deepEqual(texts('헤움로 12길 34'), ['헤움로12길 34']);
+  assert.deepEqual(texts('결수대로 123번길 45'), ['결수대로123번길 45']);
+  assert.deepEqual(texts('서울특별시 늘남구 헤움로 12 길 34'), ['서울특별시 늘남구 헤움로12길 34']);
+  const parts = parseParts('결수대로 123번길 45');
+  assert.equal(parts.name, '결수대로123번길');
+  assert.equal(parts.number, '45');
+  assert.equal(parts.kind, Kind.ROAD);
+  // A number followed by a building name that merely starts with 가/길 is still a base number.
+  assert.equal(extract('헤움로 12 가든빌딩'), '헤움로 12');
+  assert.equal(extract('헤움로 12 길음빌딩'), '헤움로 12');
+  assert.deepEqual(texts('울지로3가 12'), ['울지로3가 12']);
+  assert.deepEqual(texts('곰로 1가 24'), ['곰로1가 24']);
+  assert.equal(classify('울지로3가 12'), Kind.PARCEL);
+});
+
+test('labels: a vertical slip label read glued to the address is taken off (as on Android)', () => {
+  const real = new Set(['서울특별시', '통상구', '집배로2길', '누정동', '달선로', '분솔구', '보솔동']);
+  const strip = text => stripAddressLabels(text, name => real.has(name.replace(/\s/g, '')));
+  assert.equal(strip('받서울특별시 통상구\n는집배로 2길 18\n분101동 1203호'), '서울특별시 통상구\n집배로2길 18\n101동 1203호');
+  assert.equal(strip('받누정동 123-4'), '누정동 123-4');
+  assert.equal(strip('받는분달선로 50'), '달선로 50');
+  assert.equal(strip('받서울 통상구 집배로 2길 18'), '서울 통상구 집배로2길 18');
+  // The sender's label too.
+  assert.equal(strip('보내는분누정동 5'), '누정동 5');
+  assert.equal(strip('보내는사람달선로 50'), '달선로 50');
+  assert.equal(strip('보통상구 내달선로 50'), '통상구 달선로 50');
+  // Real names, unknown words and a label standing apart are left alone.
+  assert.equal(strip('분솔구 누정동 5'), '분솔구 누정동 5');
+  assert.equal(strip('보솔동 12'), '보솔동 12');
+  assert.equal(strip('받가나다 12'), '받가나다 12');
+  assert.equal(strip('받는분 서울특별시 통상구 집배로 2길 18'), '받는분 서울특별시 통상구 집배로 2길 18');
+  assert.equal(strip('받는분'), '받는분');
+  assert.equal(strip('집배로 2길 18'), '집배로 2길 18');
 });

@@ -19,9 +19,12 @@ const ROAD_SUFFIX = '(?:대로|로|길)';
 const NUMBER = '\\d{1,5}(?:\\s*-\\s*\\d{1,5})?';
 const PREFIX = `(?:[가-힣0-9]+(?:${PROVINCE_SUFFIX}|${DISTRICT_SUFFIX}|읍|면)\\s+)*`;
 const NO_TAIL = '(?!\\d|\\s*(?:-|동|층|호))';
+// A base number is never followed by the rest of a numbered road/legal-dong name ('헤움로 12길', '결수대로 123번길',
+// '울지로3가'): otherwise '헤움로 12길 34' would be cut to the different real address '헤움로 12' (as on Android).
+const NUMBER_END = '(?!\\d|\\s*(?:-|동|층|호)|\\s*번?길(?![가-힣])|\\s*가(?![가-힣]))';
 
-const parcelSource = `${PREFIX}([가-힣][가-힣0-9]*${LOCALITY_SUFFIX})\\s*(산\\s*)?(${NUMBER})(?:\\s*번지)?${NO_TAIL}`;
-const roadSource = `${PREFIX}([가-힣0-9]+${ROAD_SUFFIX})\\s*(${NUMBER})${NO_TAIL}`;
+const parcelSource = `${PREFIX}([가-힣][가-힣0-9]*${LOCALITY_SUFFIX})\\s*(산\\s*)?(${NUMBER})(?:\\s*번지)?${NUMBER_END}`;
+const roadSource = `${PREFIX}([가-힣0-9]+${ROAD_SUFFIX})\\s*(${NUMBER})${NUMBER_END}`;
 const parcelAddress = new RegExp(parcelSource);
 const roadAddress = new RegExp(roadSource);
 const parcelAll = () => new RegExp(parcelSource, 'g');
@@ -60,23 +63,48 @@ const canonicalRegion = value => provinceAliases.get(value) || value;
 export const normalizeRegions = text => text.replace(aliasTokens, (_, before, token) => before + canonicalRegion(token));
 
 // ---- AddressTextParser ----
+// OCR/typing often separates a numbered road or '로N가' legal dong from its base name ('헤움로 12 길 34').
+const joinSpacedNames = text => text
+  .replace(/([가-힣](?:대로|로))[ \t]+(\d{1,4})[ \t]*(번길|길)(?![가-힣])/g, '$1$2$3')
+  .replace(/([가-힣]로)[ \t]+(\d{1,2})[ \t]*가(?=[ \t]*(?:산[ \t]*)?\d)/g, '$1$2가');
+
 function normalizeOcrText(raw) {
-  return normalizeRegions(raw)
+  return joinSpacedNames(normalizeRegions(raw)
     .replace(DASHES, '-')
     .replace(/(지번|도로명)?\s*주소\s*[:：]?/gi, ' ')
     .replace(/[|,_·•]/g, ' ')
     .replace(/（/g, '(')
-    .replace(/）/g, ')');
+    .replace(/）/g, ')'));
 }
 
 function format(value) {
-  return value
+  return joinSpacedNames(value
     .replace(/\s*-\s*/g, '-')
-    .replace(/\s+/g, ' ')
+    .replace(/\s+/g, ' '))
     .replace(/(읍|면|동|가|리)(?=(?:산)?\d)/g, '$1 ')
     .replace(/산(?=\d)/g, '산 ')
     .replace(/\s*번지$/, '')
     .trim();
+}
+
+// ---- AddressLabels ----
+// Postal-slip labels ('받는분', '보내는 사람') printed vertically are read one letter glued to each address line
+// ('받서울특별시', '는집배로 2길 18', '분101동'). A leading label is taken off a word only when the word is no real
+// name and what remains is one (or a unit such as '101동'), so a real name starting with these letters stays.
+const LABELS = ['보내는사람', '받는사람', '보내는분', '받는분', '보내는', '받는', '사람', '보내', '받', '는', '분', '보', '내', '사', '람'];
+const UNIT = /^\d{1,5}(?:동|층|호)$/;
+/** `text` with leading labels taken off its words, or `text` itself when none was; `isRealName` is an exact lookup. */
+export function stripAddressLabels(text, isRealName) {
+  if (!LABELS.some(label => text.includes(label))) return text;
+  const known = rest => UNIT.test(rest) || isRealName(rest) || isRealName(normalizeRegions(rest));
+  let changed = false;
+  const result = joinSpacedNames(text).replace(/[가-힣][가-힣0-9]*/g, word => {
+    const label = isRealName(word) ? null : LABELS.find(l => word.length > l.length && word.startsWith(l) && known(word.slice(l.length)));
+    if (!label) return word;
+    changed = true;
+    return word.slice(label.length);
+  });
+  return changed ? result : text;
 }
 
 export const normalizeKey = address => address.replace(DASHES, '-').replace(/\s+/g, '').toLowerCase();

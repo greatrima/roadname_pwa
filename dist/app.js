@@ -8,7 +8,16 @@ import {AddressMemory, numberedWords} from './address-memory.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.2';
+const APP_VERSION = '1.3';
+// "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
+const WHATS_NEW = `
+### ✨ 새 기능
+- **받는분 글자 빼기**: 운송장에 세로로 적힌 "받는분", "보내는 분" 글자가 주소 앞에 붙어 읽혀도 빼고 찾습니다.
+- **업데이트 내역**: 업데이트 뒤 처음 열 때 바뀐 점을 보여 줍니다. 설정 › 정보에서 다시 볼 수 있습니다.
+
+### 🛠 고친 점
+- "집배로 2길 18"처럼 띄어 쓴 도로명을 "집배로 2"로 잘못 읽던 문제를 고쳤습니다.
+`;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
 let stream = null, hasPhoto = false, crop = null, drag = null, busy = false, job = 0, paddle = null, paddleReject = null, tess = null, cacheBusy = false;
@@ -17,7 +26,8 @@ let stream = null, hasPhoto = false, crop = null, drag = null, busy = false, job
 const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vworld: 'roadname-vworld-key', vworldDefault: 'roadname-vworld-default',
   kakao: 'roadname-kakao-key', map: 'roadname-map', engine: 'roadname-engine', continuous: 'roadname-continuous', offline: 'roadname-offline',
   developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
-  alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed'};
+  alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
+  seenVersion: 'roadname-seen-version'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -327,12 +337,18 @@ function showLocalResult(offline, message = '') {
   setStatus(offline ? '오프라인 · 인터넷 연결 후 ‘주소 변환’을 눌러주세요.' : `${message} ‘주소 변환’으로 다시 시도하세요.`);
 }
 
-function candidatesFromResult(result, region) {
+/** "받는분" printed vertically glues its letters to the address lines; needs the loaded dictionary to tell real names. */
+async function labelFree(texts) {
+  if (!dictionaryVersion || !texts.some(text => /[받는분보내사람]/.test(text))) return texts;
+  return dictionaryCall('clean', {texts}).catch(() => texts);
+}
+async function candidatesFromResult(result, region) {
+  const lines = result.lines?.length ? result.lines : null, texts = await labelFree(lines ? lines.map(line => line.text) : [result.text]);
   diag.trace = [];
   appliedCorrections = [];
   const remembered = text => { if (!memoryOn()) return text; const r = memory.apply(text); appliedCorrections.push(...r.applied); return r.text; };
-  if (!result.lines?.length) { const text = remembered(result.text); return {raw: candidatesFromBlocks([text], region), blocks: [text]}; }
-  const blocks = assembleElements(rowsFromBoxes(result.lines.map(line => ({...line, text: remembered(line.text)}))), developerMode() ? diag.trace : null);
+  if (!lines) { const text = remembered(texts[0]); return {raw: candidatesFromBlocks([text], region), blocks: [text]}; }
+  const blocks = assembleElements(rowsFromBoxes(lines.map((line, i) => ({...line, text: remembered(texts[i])}))), developerMode() ? diag.trace : null);
   return {raw: candidatesFromSpatialBlocks(blocks, region), blocks: blocks.map(b => b.text)};
 }
 
@@ -340,7 +356,8 @@ function candidatesFromResult(result, region) {
 async function handleOcr(result) {
   lastOcr = result;
   const region = currentRegion();
-  const {raw, blocks} = candidatesFromResult(result, region);
+  const {raw, blocks} = await candidatesFromResult(result, region);
+  if (lastOcr !== result) return;
   latestRaw = raw;
   diag.observe(result, raw);
   const dictionary = preferRemembered(await dictionaryCandidates(blocks, raw, region));
@@ -395,7 +412,8 @@ async function liveFrame(gen) {
 async function onLiveResult(result, now, gen) {
   if (editing || $('addressInput') === document.activeElement) return;
   const region = currentRegion();
-  const {raw, blocks} = candidatesFromResult(result, region);
+  const {raw, blocks} = await candidatesFromResult(result, region);
+  if (gen !== scanGeneration || editing) return;
   lastOcr = result; latestRaw = raw;
   diag.observe(result, raw);
   if (!continuousScan() && selected) return;
@@ -743,6 +761,31 @@ $('sendFeedback').onclick = async () => {
 };
 store.set(KEYS.offline, ''); // the manual offline mode was removed; never leave an old setting active
 $('checkDictionary').onclick = () => updateDictionary(true);
+// ---- "업데이트 내역": once on the first opening after an update (never on a first visit), and from the settings ----
+function showWhatsNew() {
+  const body = $('whatsNewBody');
+  body.replaceChildren();
+  let list = null;
+  const inline = (parent, text) => text.split('**').forEach((part, i) => parent.append(i % 2 ? Object.assign(document.createElement('b'), {textContent: part}) : part));
+  for (const line of WHATS_NEW.split('\n').map(l => l.trim())) {
+    // A "##" title is the dialog's own; ">" lines are notes for the release page only.
+    if (!line || line.startsWith('## ') || line.startsWith('>')) continue;
+    if (line.startsWith('### ')) { list = null; body.append(Object.assign(document.createElement('h3'), {textContent: line.slice(4)})); continue; }
+    if (line.startsWith('- ')) { list ??= body.appendChild(document.createElement('ul')); inline(list.appendChild(document.createElement('li')), line.slice(2)); continue; }
+    list = null; inline(body.appendChild(document.createElement('p')), line);
+  }
+  $('whatsNewTitle').textContent = `v${APP_VERSION} 업데이트 내역`;
+  $('whatsNewDialog').showModal();
+}
+$('whatsNewButton').hidden = !WHATS_NEW.trim();
+$('whatsNewButton').onclick = () => { $('settingsDialog').close(); showWhatsNew(); };
+$('closeWhatsNew').onclick = $('okWhatsNew').onclick = () => $('whatsNewDialog').close();
+{
+  // Before this existed nothing was recorded: a visitor who used the app before is no first visit.
+  const seen = store.get(KEYS.seenVersion), returning = [KEYS.vworldDefault, KEYS.dictionaryChecked, KEYS.memory, KEYS.region].some(store.get);
+  store.set(KEYS.seenVersion, APP_VERSION);
+  if (WHATS_NEW.trim() && (seen ? seen !== APP_VERSION : returning)) showWhatsNew();
+}
 $('helpButton').onclick = () => { $('settingsDialog').close(); $('help').showModal(); }; $('closeHelp').onclick = () => $('help').close();
 // iPhone Safari has no install prompt: show a one-line hint until closed; never inside the home-screen app.
 {

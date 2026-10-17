@@ -149,3 +149,6 @@ dialog h3{font-size:13px;color:#9c3260;margin:22px 0 2px;letter-spacing:.2px}
 .result-row{display:flex;align-items:flex-start;gap:6px;padding-top:12px}
 .result-row .converted-text{flex:1;padding-top:6px}
 select[multiple]{min-height:48px;height:auto;max-height:180px}
+.whats-new h3{font-size:15px;color:#17202b}
+.whats-new ul{padding-left:20px;font-size:15px;line-height:1.55;margin:6px 0}
+#okWhatsNew{margin-top:16px}

@@ -2,7 +2,7 @@
 // and answers correction/suggestion requests. Updates come from the Android repository.
 import {AddressDictionary, AddressCandidateEngine, validateDictionaryText, isOlderVersion} from './address-dictionary.mjs';
 import {localitySuggestions} from './address-suggest.mjs';
-import {candidate as makeCandidate, parseParts} from './address-core.mjs';
+import {candidate as makeCandidate, parseParts, stripAddressLabels} from './address-core.mjs';
 
 const BUNDLED = './models/address_dictionary.tsv.gz';
 const BUNDLED_VERSION = './models/dictionary-version.json';
@@ -111,6 +111,10 @@ self.onmessage = async ({data}) => {
       // Setting "내 수정 기억": which of these words are real names (a real name is never learned as a misreading).
       await ready();
       result = (data.names || []).map(name => dictionary.isExactAddressName(name));
+    } else if (type === 'clean') {
+      // Slip labels read glued to the address lines; the dictionary tells which words are real names.
+      await ready();
+      result = (data.texts || []).map(text => stripAddressLabels(text, name => dictionary.isExactAddressName(name)));
     } else if (type === 'update') result = await checkUpdate();
     else throw new Error(`unknown ${type}`);
     postMessage({id, result});
