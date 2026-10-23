@@ -11,14 +11,14 @@ const $ = id => document.getElementById(id);
 const APP_VERSION = '1.4';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
-### ✨ 새 기능
+### 새 기능
 - **의견 보내기**: 답변받을 연락처를 남길 수 있고, 아래에서 카카오톡으로도 남길 수 있습니다.
 - **만든 사람**: 설정 › 정보에서 만든 사람의 사이트를 볼 수 있습니다.
 
-### ⚙️ 설정
+### 설정
 - 설정을 항목별 화면으로 나눠 길게 내리지 않아도 됩니다.
 
-### 🛠 고친 점
+### 고친 점
 - 일부 아이폰에서 주소를 고칠 때 입력칸이 키보드에 가려지던 문제를 고쳤습니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
