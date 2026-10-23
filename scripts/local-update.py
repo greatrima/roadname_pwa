@@ -1,7 +1,8 @@
 """Monthly "내 지역 주소 자료": takes the newest month of the Ministry of the Interior and Safety's road address data
 once it is out, builds it with local-data.py, publishes it as release local-YYYYMM and redeploys the site.
 
-Run by .github/workflows/local-data.yml (daily; nothing happens until a new month is out). Needs GH_TOKEN for gh.
+Run daily on the maintainer's PC by Windows Task Scheduler (task "RoadnameLocalData"; GitHub's runners cannot reach
+juso.go.kr). Nothing happens until a new month is out. Needs a signed-in gh.
     python scripts/local-update.py                 next month after the newest local-* release
     python scripts/local-update.py 202609 --dry    one month, downloaded and built only (a reachability check)
 """
@@ -11,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -20,7 +22,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 
 
 def gh(*args):
-    return subprocess.run(['gh', *args], check=True, capture_output=True, text=True).stdout
+    return subprocess.run(['gh', *args], check=True, capture_output=True, text=True, encoding='utf-8').stdout
 
 
 def newest_month():
@@ -42,9 +44,14 @@ def download(month, folder):
     })
     request = urllib.request.Request(f'https://business.juso.go.kr/api/jst/download?{query}', headers={'User-Agent': 'Mozilla/5.0'})
     path = pathlib.Path(folder) / name
-    with urllib.request.urlopen(request, timeout=600) as res:
-        path.write_bytes(res.read())
-        print(month, res.status, res.headers.get('Content-Type'), path.stat().st_size, flush=True)
+    try:
+        with urllib.request.urlopen(request, timeout=600) as res:
+            path.write_bytes(res.read())
+            print(month, res.status, res.headers.get('Content-Type'), path.stat().st_size, flush=True)
+    except urllib.error.HTTPError as e:
+        # A month not out yet is answered 400.
+        if 400 <= e.code < 500: return None
+        raise
     return path if zipfile.is_zipfile(path) else None
 
 

@@ -1,5 +1,5 @@
-const CACHE='roadname-assets-v27';
-const SHELL=['./index.html','./style.css?v=27','./app.js?v=27','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
+const CACHE='roadname-assets-v28';
+const SHELL=['./index.html','./style.css?v=28','./app.js?v=28','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
 const OPTIONAL=['./apple-touch-icon.png','./icon-192.png','./icon-512.png','./jebichan-icon.png','./share-qr.png','./sanbug-logo.png','./licenses.txt'];
 const same=(a,b)=>new URL(a,self.location).pathname===b;
 self.addEventListener('install',event=>event.waitUntil((async()=>{

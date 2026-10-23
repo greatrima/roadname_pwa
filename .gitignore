@@ -6,3 +6,4 @@ dist/models/dictionary-version.json
 dist/vendor/*.wasm
 dist/vendor/tesseract-core-*.wasm.js
 dist/local/
+scripts/local-update.log
