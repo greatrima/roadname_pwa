@@ -8,9 +8,10 @@ Source: the Ministry of the Interior and Safety's monthly "도로명주소 한�
     # district=경기도 수원시 장안구
     R	<road name>             one line per road, numbered from 0 in order
     L	<읍면동[ 리]>           one line per locality, numbered from 0 in order
-    B	<road>	<number>	<locality>	<parcel>	<more parcels>
+    B	<road>	<number>	<locality>	<parcel>	<more parcels>	<building name>
                                number: 50, 12-3 or u396 (지하); parcel: 127, 12-3, 산12
                                more parcels: "<locality>:<parcel>" joined by ';' (관련지번)
+                               building name: 시군구용건물명, else 건축물대장건물명 (may be empty)
 
 Usage:
     python scripts/local-data.py build RNADDR_KOR_2609.zip out/      -> out/local/<code>.tsv.gz + index.json + local-data.zip
@@ -35,6 +36,11 @@ def parcel(mountain, main, sub):
     return ('산' if mountain == '1' else '') + number(main, sub)
 
 
+def building_name(c):
+    names = [c[i].strip() for i in (23, 22) if len(c) > i]
+    return next((n for n in names if n), '').replace('\t', ' ')
+
+
 def locality(dong, ri):
     return (dong + (' ' + ri if ri else '')).strip()
 
@@ -56,7 +62,7 @@ def build(source, out):
                 code = c[1][:5]
                 titles[code] = (c[2], c[3])
                 districts[code][c[0]] = [c[10], ('u' if c[11] == '1' else '') + number(c[12], c[13]), locality(c[4], c[5]),
-                                         parcel(c[6], c[7], c[8]), []]
+                                         parcel(c[6], c[7], c[8]), [], building_name(c)]
     for name in names:
         if not name.startswith('jibun_rnaddrkor_'):
             continue
@@ -75,11 +81,11 @@ def build(source, out):
     for code in sorted(districts):
         province, district = titles[code]
         roads, localities, lines = {}, {}, []
-        for road, num, loc, main_parcel, more in districts[code].values():
+        for road, num, loc, main_parcel, more, name in districts[code].values():
             r = roads.setdefault(road, len(roads))
             l_index = localities.setdefault(loc, len(localities))
             extra = ';'.join(f'{localities.setdefault(m[0], len(localities))}:{m[1]}' for m in more if m != (loc, main_parcel))
-            lines.append(f'B\t{r}\t{num}\t{l_index}\t{main_parcel}\t{extra}')
+            lines.append(f'B\t{r}\t{num}\t{l_index}\t{main_parcel}\t{extra}' + (f'\t{name}' if name else ''))
         text = '\n'.join([HEADER, f'# version={version}', f'# district={province} {district}'.strip(),
                           *(f'R\t{n}' for n in roads), *(f'L\t{n}' for n in localities), *lines]) + '\n'
         data = gzip.compress(text.encode('utf-8'), 9, mtime=0)

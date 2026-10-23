@@ -10,7 +10,7 @@ const HEADER = '# address-lens-local-v1';
 export function parseLocal(text) {
   const lines = String(text || '').split('\n');
   if (lines[0]?.trim() !== HEADER) return null;
-  const meta = {}, roads = [], localities = [], byRoad = new Map(), byParcel = new Map();
+  const meta = {}, roads = [], localities = [], byRoad = new Map(), byParcel = new Map(), byName = new Map();
   const addParcel = (loc, parcel, building) => {
     for (const key of [`${loc}|${parcel}`, `${loc.split(' ').pop()}|${parcel}`]) {
       const list = byParcel.get(key) || [];
@@ -24,8 +24,9 @@ export function parseLocal(text) {
     if (c[0] === 'R') roads.push(c[1]);
     else if (c[0] === 'L') localities.push(c[1]);
     else if (c[0] === 'B' && c.length >= 5) {
-      const building = {road: roads[+c[1]], number: c[2], locality: localities[+c[3]], parcel: c[4]};
+      const building = {road: roads[+c[1]], number: c[2], locality: localities[+c[3]], parcel: c[4], name: c[6] || ''};
       byRoad.set(`${building.road}|${building.number}`, building);
+      if (building.name.length >= 2) byName.set(building.name, [...(byName.get(building.name) || []), building]);
       addParcel(building.locality, building.parcel, building);
       for (const more of (c[5] || '').split(';').filter(Boolean)) {
         const [l, parcel] = more.split(':');
@@ -34,7 +35,9 @@ export function parseLocal(text) {
     }
   }
   const [province = '', ...rest] = (meta.district || '').split(' ');
-  return {version: meta.version || '', province, district: rest.join(' '), byRoad, byParcel};
+  // Longest names first, so "한빛아파트 2단지" is found before "한빛아파트".
+  const names = [...byName.keys()].sort((a, b) => b.length - a.length);
+  return {version: meta.version || '', province, district: rest.join(' '), byRoad, byParcel, byName, names};
 }
 
 /** A 시·군·구 named in the address that is not this district's: the address is someone else's to look up. */
@@ -43,17 +46,40 @@ function otherDistrict(parts, data) {
   return parts.prefix.some(t => /(?:시|군|구)$/.test(t) && !/(?:특별시|광역시|특별자치시)$/.test(t) && !words.includes(t));
 }
 
-/** {recognizedAddress, convertedAddress, recognizedKind, source} for `query`, or null when this district cannot tell. */
+/** The building whose name the text carries ("누정동 한빛아파트 104동"), when that name means one road address. */
+export function buildingByName(data, text) {
+  if (!data) return null;
+  const compact = String(text || '').replace(/\s+/g, '');
+  for (const name of data.names) {
+    if (name.length < 3 || !compact.includes(name.replace(/\s+/g, ''))) continue;
+    const found = data.byName.get(name), first = found[0];
+    return found.every(b => b.road === first.road && b.number === first.number) ? first : null;
+  }
+  return null;
+}
+
+/**
+ * {recognizedAddress, convertedAddress, recognizedKind, source, buildingName} for `query`, or null when this district
+ * cannot tell. An address without a number is found by a building name it carries.
+ */
 export function lookupLocal(data, query) {
   if (!data) return null;
   const parts = parseParts(extract(query) ?? query);
-  if (!parts || parts.number == null || otherDistrict(parts, data)) return null;
   const region = `${data.province} ${data.district}`;
   const road = b => `${region} ${b.road} ${b.number.replace(/^u/, '지하 ')}`;
   const parcel = b => `${region} ${b.locality} ${b.parcel.replace(/^산/, '산 ')}`;
+  const result = (b, recognizedAddress, convertedAddress, recognizedKind) =>
+    ({recognizedAddress, convertedAddress, recognizedKind, source: LOCAL_SOURCE, buildingName: b.name || ''});
+  if (!parts || parts.number == null) {
+    const b = buildingByName(data, query);
+    // Only words before the name: a district named there that is not this one.
+    const named = {prefix: String(query).split(/\s+/)};
+    return b && !otherDistrict(named, data) ? result(b, road(b), parcel(b), Kind.ROAD) : null;
+  }
+  if (otherDistrict(parts, data)) return null;
   if (parts.kind === Kind.ROAD) {
     const b = data.byRoad.get(`${parts.name}|${parts.number}`);
-    return b ? {recognizedAddress: road(b), convertedAddress: parcel(b), recognizedKind: Kind.ROAD, source: LOCAL_SOURCE} : null;
+    return b ? result(b, road(b), parcel(b), Kind.ROAD) : null;
   }
   const key = `${parts.name}|${parts.mountain ? '산' : ''}${parts.number}`;
   const found = data.byParcel.get(key) || [];
@@ -61,8 +87,7 @@ export function lookupLocal(data, query) {
   const roads = [...new Set(found.map(road))];
   if (roads.length !== 1) return null;
   const b = found[0];
-  return {recognizedAddress: `${region} ${b.locality} ${parts.mountain ? '산 ' : ''}${parts.number}`, convertedAddress: roads[0],
-    recognizedKind: Kind.PARCEL, source: LOCAL_SOURCE};
+  return result(b, `${region} ${b.locality} ${parts.mountain ? '산 ' : ''}${parts.number}`, roads[0], Kind.PARCEL);
 }
 
 /** Text of a gzip file. */

@@ -10,11 +10,11 @@ import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCo
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.6';
+const APP_VERSION = '1.6.1';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **내 지역 주소 자료**: 설정 › 주소 검색에서 받아 두면, 기본 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다.
+- **내 지역 주소 자료**: 설정 › 주소 검색에서 받아 두면, 기본 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾습니다.
 - **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
@@ -222,13 +222,15 @@ function submitManualAddress() {
 /** confirmed: typed, corrected or chosen by the user, so a found address may be remembered. */
 async function convertAddress(raw, confirmed = false) {
   const parsed = extract(raw) ?? raw.trim();
-  if (!parsed || parseParts(parsed)?.number == null) { setStatus('도로명·지명과 건물번호·번지를 함께 입력해 주세요.'); return; }
+  // Without a number, a building name of the region's own data still finds the address ("한빛아파트 104동").
+  const byName = !parsed || parseParts(parsed)?.number == null ? lookupLocal(localData, raw) : null;
+  if (!byName && (!parsed || parseParts(parsed)?.number == null)) { setStatus('도로명·지명과 건물번호·번지를 함께 입력해 주세요.'); return; }
   const id = ++requestSeq;
   awaitingNetwork = false; setMapAddress(null); setConverting(true);
   setConverted('주소를 확인하고 있습니다…'); setStatus('');
   diag.begin(parsed);
   // The region's own data first (offline too); the servers for anything it cannot tell.
-  const local = lookupLocal(localData, parsed);
+  const local = byName || lookupLocal(localData, parsed);
   if (!local && !store.get(KEYS.vworld) && !store.get(KEYS.vworldDefault) && !store.get(KEYS.kakao)) await loadDefaultKey();
   const result = local ? {type: 'success', result: local} : await converter.convert(parsed);
   if (id !== requestSeq) return;
