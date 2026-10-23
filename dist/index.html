@@ -8,7 +8,7 @@
   <title>도로명변환기</title>
   <link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2">
   <link rel="icon" type="image/png" href="./icon-192.png?v=2">
-  <link rel="stylesheet" href="./style.css?v=19">
+  <link rel="stylesheet" href="./style.css?v=20">
 </head>
 <body>
  <main class="app-shell">
@@ -48,42 +48,54 @@
    <div class="action-bar"><button id="convertButton" class="secondary">주소 변환</button><button id="run" class="primary" disabled>인식하기</button><button id="reset" class="secondary">다시 인식</button></div>
   </section>
  </main>
- <dialog id="settingsDialog"><div class="dialog-head"><h2 class="settings-title"><img src="./jebichan-icon.png" alt="" width="30" height="30">설정</h2><span id="appVersionBadge" class="version-badge"></span><button id="closeSettings" class="iconbutton" aria-label="설정 닫기">×</button></div>
+ <dialog id="settingsDialog"><div class="dialog-head"><button id="settingsBack" class="iconbutton" aria-label="뒤로" hidden>←</button><h2 class="settings-title"><img id="settingsIcon" src="./jebichan-icon.png" alt="" width="30" height="30"><span id="settingsTitle">설정</span></h2><span id="appVersionBadge" class="version-badge"></span><button id="closeSettings" class="iconbutton" aria-label="설정 닫기">×</button></div>
+  <div class="settings-page" data-page="main">
+  <h3>인식</h3>
+  <div class="setting-list"><button data-open="region">우선 인식 지역 <span class="row-end"><span class="row-value" id="regionValue"></span><span aria-hidden="true">›</span></span></button><button data-open="assist">인식 보조 <span class="row-end"><span class="row-value" id="assistValue"></span><span aria-hidden="true">›</span></span></button><button data-open="buttons">노출 버튼 관리 <span aria-hidden="true">›</span></button></div>
+  <div class="setting-group"><label for="engine">인식 방식</label><select id="engine"><option value="paddle">PaddleOCR · 한국어</option><option value="tesseract">Tesseract · 한국어 + 영어</option><option value="compare">두 방식 비교</option></select></div>
   <label class="toggle"><input type="checkbox" id="continuousScan">연속 스캔</label>
   <h3>변환 알림</h3>
   <label class="toggle" id="alertVibrationRow"><input type="checkbox" id="alertVibration">진동</label>
   <label class="toggle"><input type="checkbox" id="alertSound">소리</label>
-  <h3>우선 인식 지역</h3>
+  <h3>주소 검색</h3>
+  <div class="setting-list"><button data-open="api">주소 검색 API <span class="row-end"><span class="row-value" id="apiValue"></span><span aria-hidden="true">›</span></span></button><button id="checkDictionary">주소 사전 업데이트 <span class="row-value" id="dictionaryVersion">불러오는 중</span></button></div>
+  <p id="dictionaryMessage" class="cache-message" role="status"></p>
+  <div class="setting-group"><label for="mapProvider">지도 앱</label><select id="mapProvider"><option value="naver">네이버지도</option><option value="kakao">카카오맵</option></select></div>
+  <h3>정보</h3>
+  <div class="setting-list"><button data-open="feedback">의견 보내기 <span aria-hidden="true">›</span></button><button id="whatsNewButton">업데이트 내역 <span aria-hidden="true">›</span></button><button id="helpButton">사용 방법 <span aria-hidden="true">›</span></button><button data-open="share">공유 <span aria-hidden="true">›</span></button><button data-open="maker">만든 사람 <span aria-hidden="true">›</span></button></div>
+  <label class="toggle"><input type="checkbox" id="developerMode">개발자 모드</label>
+  <div class="setting-status"><span>앱 버전</span><span id="appVersion"></span></div>
+  <div class="setting-status"><span>연결 상태</span><span id="offlineState">온라인</span></div>
+  <p id="cacheMessage" class="cache-message" role="status"></p>
+  </div>
+  <div class="settings-page" data-page="region" data-title="우선 인식 지역" hidden>
   <div class="setting-group"><label for="regionProvince">시·도</label><select id="regionProvince"><option value="">전체</option></select></div>
   <div class="setting-group"><label for="regionCity" id="regionCityLabel">시·군</label><select id="regionCity" disabled><option value="">전체</option></select></div>
   <div class="setting-group" id="regionGuGroup" hidden><label for="regionGu">구</label><select id="regionGu"><option value="">전체</option></select></div>
   <div class="setting-group" id="regionLocalityGroup" hidden><label for="regionLocality">동</label><select id="regionLocality" multiple></select></div>
   <p id="regionMessage" class="cache-message" role="status"></p>
-  <h3>API 설정</h3>
+  </div>
+  <div class="settings-page" data-page="assist" data-title="인식 보조" hidden>
+  <label class="toggle"><input type="checkbox" id="memoryToggle">내 수정 기억<small>직접 입력하거나 고친 주소의 이름을 기억해, 같은 글자가 다시 잘못 읽히면 자동으로 넣습니다. 번지와 동·호수는 저장하지 않습니다.</small></label>
+  <button id="clearMemory" class="secondary wide">기억 지우기</button><p id="memoryMessage" class="cache-message" role="status"></p>
+  </div>
+  <div class="settings-page" data-page="buttons" data-title="노출 버튼 관리" hidden><div id="buttonSettings"></div></div>
+  <div class="settings-page" data-page="api" data-title="주소 검색 API" hidden>
   <div class="setting-group"><label for="vworldKey">VWorld 검색 API 키</label><input id="vworldKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="설정 안 됨"></div>
   <div class="setting-group"><label for="kakaoKey">카카오 REST API 키</label><input id="kakaoKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="설정 안 됨"></div>
   <button id="saveKeys" class="primary wide">API 키 저장</button><p id="keyMessage" class="cache-message" role="status"></p>
-  <div class="setting-group"><label for="mapProvider">지도 앱</label><select id="mapProvider"><option value="naver">네이버지도</option><option value="kakao">카카오맵</option></select></div>
-  <h3>인식</h3>
-  <div class="setting-group"><label for="engine">인식 방식</label><select id="engine"><option value="paddle">PaddleOCR · 한국어</option><option value="tesseract">Tesseract · 한국어 + 영어</option><option value="compare">두 방식 비교</option></select></div>
-  <label class="toggle"><input type="checkbox" id="memoryToggle">내 수정 기억<small>직접 입력하거나 고친 주소의 이름을 기억해, 같은 글자가 다시 잘못 읽히면 자동으로 넣습니다. 번지와 동·호수는 저장하지 않습니다.</small></label>
-  <button id="clearMemory" class="secondary wide">기억 지우기</button><p id="memoryMessage" class="cache-message" role="status"></p>
-  <label class="toggle"><input type="checkbox" id="developerMode">개발자 모드</label>
-  <h3>버튼 표시</h3>
-  <div id="buttonSettings"></div>
-  <h3>정보</h3>
-  <div class="setting-status"><span>앱 버전</span><span id="appVersion"></span></div>
-  <div class="setting-status"><span>현재 주소 사전</span><span id="dictionaryVersion">불러오는 중</span></div>
-  <button id="checkDictionary" class="secondary wide">주소 사전 업데이트 확인</button><p id="dictionaryMessage" class="cache-message" role="status"></p>
-  <div class="setting-list"><button id="feedbackButton">의견 보내기 <span aria-hidden="true">›</span></button><button id="whatsNewButton">업데이트 내역 <span aria-hidden="true">›</span></button><button id="helpButton">사용 방법 <span aria-hidden="true">›</span></button></div>
-  <p id="cacheMessage" class="cache-message" role="status"></p>
-  <div class="setting-status"><span>연결 상태</span><span id="offlineState">온라인</span></div>
-  <h3>공유</h3>
-  <img class="share-qr" src="./share-qr.png" alt="도로명변환기 주소 QR 코드" width="220" height="220" loading="lazy"></dialog>
- <dialog id="feedbackDialog"><div class="dialog-head"><h2>의견 보내기</h2><button id="closeFeedback" class="iconbutton" aria-label="닫기">×</button></div>
+  </div>
+  <div class="settings-page" data-page="feedback" data-title="의견 보내기" hidden>
   <textarea id="feedbackText" rows="6" maxlength="1000" aria-label="의견"></textarea>
+  <input id="feedbackContact" type="text" maxlength="100" autocomplete="off" placeholder="답변받을 연락처 (선택)" aria-label="답변받을 연락처 (선택)">
   <p id="feedbackMessage" class="cache-message" role="status"></p>
-  <button id="sendFeedback" class="primary wide">보내기</button></dialog>
+  <button id="sendFeedback" class="primary wide">보내기</button>
+  <hr class="page-divider">
+  <a id="feedbackChat" class="link-button" href="https://open.kakao.com/o/sPEPFpRi" target="_blank" rel="noopener">카카오톡으로 남기기</a>
+  </div>
+  <div class="settings-page" data-page="share" data-title="공유" hidden><img class="share-qr" src="./share-qr.png" alt="도로명변환기 주소 QR 코드" width="220" height="220" loading="lazy"></div>
+  <div class="settings-page maker" data-page="maker" data-title="만든 사람" hidden><img src="./sanbug-logo.png" alt="산벌레 로고" width="180" height="180" loading="lazy"><a class="link-button" href="https://sanbug.net/" target="_blank" rel="noopener">sanbug.net</a></div>
+ </dialog>
  <dialog id="whatsNewDialog"><div class="dialog-head"><h2 id="whatsNewTitle">업데이트 내역</h2><button id="closeWhatsNew" class="iconbutton" aria-label="닫기">×</button></div>
   <div id="whatsNewBody" class="whats-new"></div>
   <button id="okWhatsNew" class="primary wide">확인</button></dialog>
@@ -91,5 +103,5 @@
  <!-- Anonymous counts (GoatCounter, no cookies): only /app (home-screen) or /web (browser), plus /ok or /fail for a lookup; never addresses or photos. -->
  <script>window.goatcounter={path:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'/app':'/web',title:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'홈 화면 앱':'브라우저'};</script>
  <script data-goatcounter="https://greatrima.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
- <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=19"></script>
+ <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=20"></script>
 </body></html>

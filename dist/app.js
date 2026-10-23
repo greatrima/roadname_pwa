@@ -8,15 +8,18 @@ import {AddressMemory, numberedWords} from './address-memory.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### ✨ 새 기능
-- **받는분 글자 빼기**: 운송장에 세로로 적힌 "받는분", "보내는 분" 글자가 주소 앞에 붙어 읽혀도 빼고 찾습니다.
-- **업데이트 내역**: 업데이트 뒤 처음 열 때 바뀐 점을 보여 줍니다. 설정 › 정보에서 다시 볼 수 있습니다.
+- **의견 보내기**: 답변받을 연락처를 남길 수 있고, 아래에서 카카오톡으로도 남길 수 있습니다.
+- **만든 사람**: 설정 › 정보에서 만든 사람의 사이트를 볼 수 있습니다.
+
+### ⚙️ 설정
+- 설정을 항목별 화면으로 나눠 길게 내리지 않아도 됩니다.
 
 ### 🛠 고친 점
-- "집배로 2길 18"처럼 띄어 쓴 도로명을 "집배로 2"로 잘못 읽던 문제를 고쳤습니다.
+- 일부 아이폰에서 주소를 고칠 때 입력칸이 키보드에 가려지던 문제를 고쳤습니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -128,6 +131,7 @@ function saveRegion() {
 function showRegion() {
   const region = currentRegion();
   $('regionName').textContent = (regionName(region) || '지역 설정 안 됨') + (region.localities.length ? ` · ${region.localities.length}곳` : '');
+  if ($('regionValue')) settingsValues();
 }
 
 // ---- address state (Android MainActivity flow) ----
@@ -704,13 +708,36 @@ $('copyResult').onclick = () => { if (mapAddress) { void copyText(mapAddress, '�
 // The whole result is the copy target: easier than the small icon with one hand.
 $('convertedText').onclick = () => $('copyResult').onclick();
 $('mapButton').onclick = () => { openMap(); if (mapAddress) confirmUse(); };
-function openSettings(focus) {
+// ---- settings: a list of rows; "›" rows open a page of the same dialog, ← (or Esc / back) returns to the list ----
+let settingsPage = 'main';
+function settingsValues() {
+  const region = currentRegion();
+  $('regionValue').textContent = (regionName(region) || '설정 안 됨') + (region.localities.length ? ` · ${region.localities.length}곳` : '');
+  $('assistValue').textContent = memoryOn() ? '켜짐' : '꺼짐';
+  $('apiValue').textContent = store.get(KEYS.vworld) || store.get(KEYS.kakao) ? '개인 키' : store.get(KEYS.vworldDefault) ? '기본 키' : '설정 안 됨';
+}
+function showSettingsPage(name) {
+  const pages = [...document.querySelectorAll('#settingsDialog .settings-page')], page = pages.find(p => p.dataset.page === name) || pages[0];
+  for (const p of pages) p.hidden = p !== page;
+  settingsPage = page.dataset.page;
+  const main = settingsPage === 'main';
+  $('settingsTitle').textContent = page.dataset.title || '설정';
+  $('settingsBack').hidden = main; $('settingsIcon').hidden = !main; $('appVersionBadge').hidden = !main;
+  if (settingsPage === 'feedback') $('feedbackMessage').textContent = '';
+  settingsValues();
+  $('settingsDialog').scrollTop = 0;
+}
+function openSettings(page = 'main') {
   $('vworldKey').value = store.get(KEYS.vworld); $('kakaoKey').value = store.get(KEYS.kakao); $('keyMessage').textContent = ''; $('dictionaryMessage').textContent = '';
   $('vworldKey').placeholder = store.get(KEYS.vworldDefault) ? '기본 키 사용 중' : '설정 안 됨';
   $('mapProvider').value = store.get(KEYS.map) || 'naver'; renderButtonSettings();
-  $('settingsDialog').showModal(); void loadRegions().then(() => { if (focus) $(focus).focus(); });
+  showSettingsPage(page);
+  $('settingsDialog').showModal(); void loadRegions();
 }
-$('settingsButton').onclick = () => openSettings(); $('regionButton').onclick = () => openSettings('regionProvince'); $('closeSettings').onclick = () => $('settingsDialog').close();
+for (const button of document.querySelectorAll('#settingsDialog [data-open]')) button.onclick = () => showSettingsPage(button.dataset.open);
+$('settingsBack').onclick = () => showSettingsPage('main');
+$('settingsDialog').addEventListener('cancel', e => { if (settingsPage !== 'main') { e.preventDefault(); showSettingsPage('main'); } });
+$('settingsButton').onclick = () => openSettings(); $('regionButton').onclick = () => openSettings('region'); $('closeSettings').onclick = () => $('settingsDialog').close();
 $('regionProvince').onchange = () => { renderCities(); saveRegion(); };
 $('regionCity').onchange = () => { renderGus(); saveRegion(); };
 $('regionGu').onchange = () => { renderLocalities(); saveRegion(); };
@@ -730,7 +757,7 @@ for (const [id, key] of [['alertVibration', KEYS.alertVibrationOff], ['alertSoun
 }
 $('alertVibrationRow').hidden = !navigator.vibrate;
 $('memoryToggle').checked = memoryOn();
-$('memoryToggle').onchange = () => store.set(KEYS.memoryOff, $('memoryToggle').checked ? '' : '1');
+$('memoryToggle').onchange = () => { store.set(KEYS.memoryOff, $('memoryToggle').checked ? '' : '1'); settingsValues(); };
 $('clearMemory').onclick = () => { memory.clear(); store.set(KEYS.memory, ''); $('memoryMessage').textContent = '기억을 지웠습니다.'; };
 // Keep the screen on while the app is in front (mail in the other hand); the browser releases it when hidden.
 let wakeLock = null;
@@ -741,12 +768,11 @@ async function keepAwake() {
 document.addEventListener('visibilitychange', keepAwake);
 addEventListener('pointerdown', keepAwake, {passive: true});
 void keepAwake();
-// "의견 보내기": a box to write in; the text and the app description go to the feedback form, nothing else.
+// "의견 보내기" (a settings page): the text, a contact if the user leaves one and the app description go to the
+// feedback form, nothing else. The open chat link sits under it.
 const FEEDBACK_FORM = 'https://docs.google.com/forms/d/e/1FAIpQLSdc_SGkk0MCH3nE05VGCSXsT0bUU2O7EC75uylUyge7TiA1Cw/formResponse';
-$('feedbackButton').onclick = () => { $('settingsDialog').close(); $('feedbackMessage').textContent = ''; $('feedbackDialog').showModal(); $('feedbackText').focus(); };
-$('closeFeedback').onclick = () => $('feedbackDialog').close();
 $('sendFeedback').onclick = async () => {
-  const text = $('feedbackText').value.trim().slice(0, 1000);
+  const text = $('feedbackText').value.trim().slice(0, 1000), contact = $('feedbackContact').value.trim().slice(0, 100);
   if (!text) { $('feedbackMessage').textContent = '의견을 입력해 주세요.'; return; }
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   const info = `도로명변환기 웹 ${APP_VERSION} · ${standalone ? '홈 화면 앱' : '브라우저'} · ${navigator.userAgent}`.slice(0, 300);
@@ -754,8 +780,10 @@ $('sendFeedback').onclick = async () => {
   try {
     if (!online()) throw new Error('offline');
     // The form answers another site, so the reply cannot be read: an accepted request is taken as sent.
-    await fetch(FEEDBACK_FORM, {method: 'POST', mode: 'no-cors', body: new URLSearchParams({'entry.166744206': text, 'entry.187592757': info})});
-    $('feedbackText').value = ''; $('feedbackDialog').close(); setStatus('의견을 보냈습니다.');
+    const fields = {'entry.166744206': text, 'entry.187592757': info};
+    if (contact) fields['entry.1726801074'] = contact;
+    await fetch(FEEDBACK_FORM, {method: 'POST', mode: 'no-cors', body: new URLSearchParams(fields)});
+    $('feedbackText').value = ''; $('feedbackContact').value = ''; $('settingsDialog').close(); setStatus('의견을 보냈습니다.');
   } catch { $('feedbackMessage').textContent = '보내지 못했습니다. 인터넷 연결을 확인해 주세요.'; }
   $('sendFeedback').disabled = false;
 };
@@ -785,6 +813,30 @@ $('closeWhatsNew').onclick = $('okWhatsNew').onclick = () => $('whatsNewDialog')
   const seen = store.get(KEYS.seenVersion), returning = [KEYS.vworldDefault, KEYS.dictionaryChecked, KEYS.memory, KEYS.region].some(store.get);
   store.set(KEYS.seenVersion, APP_VERSION);
   if (WHATS_NEW.trim() && (seen ? seen !== APP_VERSION : returning)) showWhatsNew();
+}
+// ---- keyboard: some iPhones (home-screen app) do not shrink the page for the keyboard, so the box being edited
+// could stay behind it. While the keyboard is up the app and its dialogs take the visible height only, and the
+// box is scrolled into the middle of it. ----
+if (window.visualViewport) {
+  const view = window.visualViewport, root = document.documentElement;
+  const editable = el => el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'file', 'range'].includes(el.type));
+  let frame = 0;
+  const fit = () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      const keyboard = innerHeight - view.height > 120 && editable(document.activeElement);
+      root.classList.toggle('keyboard', keyboard);
+      if (!keyboard) { root.style.removeProperty('--visible-height'); root.style.removeProperty('--visible-top'); return; }
+      root.style.setProperty('--visible-height', `${Math.round(view.height)}px`);
+      root.style.setProperty('--visible-top', `${Math.round(view.offsetTop)}px`);
+      const box = document.activeElement.getBoundingClientRect();
+      if (box.top < view.offsetTop + 8 || box.bottom > view.offsetTop + view.height - 8) document.activeElement.scrollIntoView({block: 'center'});
+    });
+  };
+  view.addEventListener('resize', fit);
+  view.addEventListener('scroll', fit);
+  document.addEventListener('focusin', () => setTimeout(fit, 300));
+  document.addEventListener('focusout', () => setTimeout(fit, 300));
 }
 $('helpButton').onclick = () => { $('settingsDialog').close(); $('help').showModal(); }; $('closeHelp').onclick = () => $('help').close();
 // iPhone Safari has no install prompt: show a one-line hint until closed; never inside the home-screen app.
