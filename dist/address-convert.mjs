@@ -5,7 +5,7 @@
 import {Kind, extract, classify, normalizeKey, validatedParts, exactMatch} from './address-core.mjs';
 
 export const Source = Object.freeze({VWORLD: 'VWORLD', KAKAO: 'KAKAO'});
-export const SOURCE_LABEL = Object.freeze({VWORLD: 'VWorld', KAKAO: '카카오맵'});
+export const SOURCE_LABEL = Object.freeze({VWORLD: 'VWorld', KAKAO: '카카오맵', LOCAL: '내 지역 주소 자료'});
 
 export const outcome = {
   success: result => ({type: 'success', result}),

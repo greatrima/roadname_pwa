@@ -5,15 +5,17 @@ import {
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
+import {parseLocal, lookupLocal, gunzipText} from './local-address.mjs';
 import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.5';
+const APP_VERSION = '1.6';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다. 구분대는 이름을 붙여 여러 개 저장할 수 있고, 글로 내보내고 불러올 수 있습니다.
+- **내 지역 주소 자료**: 설정 › 주소 검색에서 받아 두면, 기본 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다.
+- **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -24,7 +26,7 @@ const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vwor
   kakao: 'roadname-kakao-key', map: 'roadname-map', engine: 'roadname-engine', continuous: 'roadname-continuous', offline: 'roadname-offline',
   developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
   alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
-  seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting'};
+  seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -116,6 +118,8 @@ function renderLocalities(selected = []) {
   $('regionLocalityGroup').hidden = !names.length;
 }
 function saveRegion() {
+  // The local data follows the region (only once it was taken).
+  setTimeout(() => { if (localMeta()) void downloadLocalData(true); }, 0);
   const province = $('regionProvince').value, district = province ? selectedDistrict() : '';
   const localities = district ? [...$('regionLocality').selectedOptions].map(o => o.value) : [];
   store.set(KEYS.region, province ? `${province}|${district}` : '');
@@ -223,8 +227,10 @@ async function convertAddress(raw, confirmed = false) {
   awaitingNetwork = false; setMapAddress(null); setConverting(true);
   setConverted('주소를 확인하고 있습니다…'); setStatus('');
   diag.begin(parsed);
-  if (!store.get(KEYS.vworld) && !store.get(KEYS.vworldDefault) && !store.get(KEYS.kakao)) await loadDefaultKey();
-  const result = await converter.convert(parsed);
+  // The region's own data first (offline too); the servers for anything it cannot tell.
+  const local = lookupLocal(localData, parsed);
+  if (!local && !store.get(KEYS.vworld) && !store.get(KEYS.vworldDefault) && !store.get(KEYS.kakao)) await loadDefaultKey();
+  const result = local ? {type: 'success', result: local} : await converter.convert(parsed);
   if (id !== requestSeq) return;
   setConverting(false);
   switch (result.type) {
@@ -1058,6 +1064,52 @@ function renderAssign() {
   });
 }
 showSorting();
+
+// ---- "내 지역 주소 자료": the default region's 시·군·구 file (public road address data, served with the app), kept in
+// this browser so its addresses convert without the address servers. Taken again when the region changes. ----
+let localData = null;
+const LOCAL_CACHE = 'roadname-local';
+const localMeta = () => { try { return JSON.parse(store.get(KEYS.local) || 'null'); } catch { return null; } };
+function localValues() {
+  const meta = localMeta();
+  $('localDataValue').textContent = meta ? `${meta.district} · ${meta.version.slice(0, 4)}.${meta.version.slice(4)}` : '받기';
+}
+async function loadLocalData() {
+  const meta = localMeta();
+  if (!meta) return;
+  try {
+    const saved = await (await caches.open(LOCAL_CACHE)).match(`./local/${meta.code}.tsv.gz`);
+    if (saved) localData = parseLocal(await gunzipText(new Uint8Array(await saved.arrayBuffer())));
+  } catch { localData = null; }
+}
+/** Takes the default region's district file; `quiet` (a region change) tells nothing unless it fails. */
+async function downloadLocalData(quiet = false) {
+  const region = currentRegion();
+  if (!region.province || !region.district) { $('localMessage').textContent = '기본 지역의 시·군·구를 먼저 정해 주세요.'; return; }
+  if (!online()) { $('localMessage').textContent = '인터넷 연결이 필요합니다.'; return; }
+  if (!quiet) $('localMessage').textContent = '받는 중…';
+  try {
+    const index = await (await fetch('./local/index.json', {cache: 'no-store'})).json();
+    const entry = index.districts.find(d => d.province === region.province && d.district === region.district);
+    if (!entry) { $('localMessage').textContent = '이 지역 자료가 없습니다.'; return; }
+    const meta = localMeta();
+    if (meta?.code === entry.code && meta.version === index.version && localData) { if (!quiet) $('localMessage').textContent = '최신 자료입니다.'; return; }
+    const response = await fetch(`./local/${entry.code}.tsv.gz`, {cache: 'no-store'});
+    if (!response.ok) throw new Error(String(response.status));
+    const bytes = new Uint8Array(await response.clone().arrayBuffer());
+    const data = parseLocal(await gunzipText(bytes));
+    if (!data) throw new Error('format');
+    const cache = await caches.open(LOCAL_CACHE);
+    for (const key of await cache.keys()) await cache.delete(key);
+    await cache.put(`./local/${entry.code}.tsv.gz`, response);
+    store.set(KEYS.local, JSON.stringify({code: entry.code, version: index.version, district: entry.district}));
+    localData = data;
+    $('localMessage').textContent = `${entry.district} 자료를 받았습니다. 이 지역 주소는 인터넷 없이 변환됩니다.`;
+  } catch { $('localMessage').textContent = '받지 못했습니다. 잠시 뒤 다시 눌러 주세요.'; }
+  localValues();
+}
+$('localDataButton').onclick = () => downloadLocalData();
+void loadLocalData().then(localValues);
 
 // ---- keyboard: some iPhones (home-screen app) do not shrink the page for the keyboard, so the box being edited
 // could stay behind it. While the keyboard is up the app and its dialogs take the visible height only, and the

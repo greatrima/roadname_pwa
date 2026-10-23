@@ -34,3 +34,6 @@ It is rendered using Noto Sans CJK KR (SIL Open Font License 1.1).
 The font file itself is not distributed with the application.
 
 Asset download URLs and SHA-256 digests: assets-manifest.json
+
+내 지역 주소 자료: 행정안전부 도로명주소 한글 전체분(주소기반산업지원서비스 business.juso.go.kr, 공공데이터)을
+시·군·구별로 나눈 것입니다. scripts/local-data.py

@@ -43,3 +43,13 @@ assert header=='# address-lens-dictionary-v1' and generated.startswith('# genera
 (root/'models/dictionary-version.json').write_text(json.dumps({'version':generated.split('=',1)[1].strip()}))
 print('address dictionary:',generated,flush=True)
 print('character count:',len(chars)+2,flush=True)
+# "내 지역 주소 자료": the newest local-YYYYMM release of this repository, built by scripts/local-data.py from the
+# Ministry of the Interior and Safety's public road address data; served next to the app (dist/local/<code>.tsv.gz).
+import io, zipfile
+with urllib.request.urlopen('https://api.github.com/repos/greatrima/roadname_pwa/releases?per_page=30',timeout=60) as res:
+ releases=[r for r in json.load(res) if r['tag_name'].startswith('local-')]
+release=max(releases,key=lambda r:r['tag_name'])
+url=next(a['browser_download_url'] for a in release['assets'] if a['name']=='local-data.zip')
+with urllib.request.urlopen(url,timeout=300) as res: bundle=res.read()
+zipfile.ZipFile(io.BytesIO(bundle)).extractall(root)
+print('local data:',release['tag_name'],len(bundle),flush=True)

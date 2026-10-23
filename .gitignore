@@ -5,3 +5,4 @@ dist/models/address_dictionary.tsv.gz
 dist/models/dictionary-version.json
 dist/vendor/*.wasm
 dist/vendor/tesseract-core-*.wasm.js
+dist/local/
