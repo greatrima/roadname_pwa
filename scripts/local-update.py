@@ -1,8 +1,7 @@
 """Monthly "내 지역 주소 자료": takes the newest month of the Ministry of the Interior and Safety's road address data
 once it is out, builds it with local-data.py, publishes it as release local-YYYYMM and redeploys the site.
 
-Run daily on the maintainer's PC by Windows Task Scheduler (task "RoadnameLocalData"; GitHub's runners cannot reach
-juso.go.kr). Nothing happens until a new month is out. Needs a signed-in gh.
+Run by hand when a new month is out (GitHub's runners cannot reach juso.go.kr). Needs a signed-in gh.
     python scripts/local-update.py                 next month after the newest local-* release
     python scripts/local-update.py 202609 --dry    one month, downloaded and built only (a reachability check)
 """
