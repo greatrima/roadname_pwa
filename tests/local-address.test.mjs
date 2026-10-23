@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLocal, lookupLocal, buildingByName, correctCandidates, CORRECTED, MISSING} from '../dist/local-address.mjs';
-import {candidate, Kind, classify} from '../dist/address-core.mjs';
+import {parseLocal, lookupLocal, buildingByName, correctNames} from '../dist/local-address.mjs';
 
 // Invented names only, in the format scripts/local-data.py writes.
 const district = [
@@ -46,15 +45,16 @@ test('local data: building names come with the address and find it without a num
   assert.equal(lookupLocal(data, '없는아파트 104동'), null);
 });
 
-test('local data: impossible numbers are never converted by themselves, near real ones offered (as in the app)', () => {
+test('local data: misread road and 동 names are put right by the region\'s names (as in the app)', () => {
   const data = parseLocal(district);
-  const check = text => correctCandidates([candidate(text, classify(text))], data);
-  assert.deepEqual(check('누정4길 50').map(c => [c.text, !!c.manualOnly]), [['누정4길 50', false]]);
-  const misread = check('누정4길 60');
-  assert.deepEqual(misread.map(c => [c.text, c.manualOnly, c.reviewReason]), [['누정4길 60', true, MISSING], ['누정4길 50', true, CORRECTED]]);
-  assert.deepEqual(check('누정4길 54').map(c => c.text), ['누정4길 54', '누정4길 50', '누정4길 52', '누정4길 56']);
-  assert.equal(check('누정4길 5')[0].manualOnly, true);
-  assert.deepEqual(check('누장4길 50').map(c => c.text), ['누장4길 50', '누정4길 50']);
-  assert.deepEqual(check('울산광역시 한솔구 누정4길 5').map(c => c.text), ['울산광역시 한솔구 누정4길 5']);
-  assert.equal(correctCandidates([candidate('누정4길 5', Kind.ROAD)], null)[0].text, '누정4길 5');
+  for (const read of ['다슬로 7', '타슬로 7', '다솔르 7', '울산광역시 복판구 다슬로 7']) assert.equal(correctNames(data, read), read.replace(/[다타][솔슬][로르]/, '다솔로'), read);
+  assert.equal(correctNames(data, '누장동 12-3'), '누정동 12-3');
+  assert.equal(correctNames(data, '모잔리 산45'), '모전리 산45');
+  assert.equal(correctNames(data, '누정4길 50'), '누정4길 50');
+  assert.equal(correctNames(data, '다슬로 8'), '다슬로 8');
+  assert.equal(correctNames(data, '가나라로 7'), '가나라로 7');
+  assert.equal(correctNames(data, '한빛아파트 104동 1203호'), '한빛아파트 104동 1203호');
+  assert.equal(correctNames(null, '다슬로 7'), '다슬로 7');
+  const numbered = parseLocal(['# address-lens-local-v1', '# district=울산광역시 복판구', 'R\t누정40길', 'R\t누정43길', 'L\t누정동', 'B\t0\t9\t0\t1\t', 'B\t1\t9\t0\t2\t'].join('\n'));
+  assert.equal(correctNames(numbered, '누장43길 9'), '누정43길 9', 'the number inside the name decides');
 });

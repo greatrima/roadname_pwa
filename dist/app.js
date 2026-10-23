@@ -5,16 +5,16 @@ import {
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
-import {parseLocal, lookupLocal, gunzipText, correctCandidates} from './local-address.mjs';
+import {parseLocal, lookupLocal, gunzipText, correctNames} from './local-address.mjs';
 import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.6.2';
+const APP_VERSION = '1.6.3';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **내 지역 주소 자료**: 설정 › 주소 검색에서 받아 두면, 기본 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 그 지역에 없는 번지로 잘못 읽으면 바로 변환하지 않고 가까운 실제 번지를 후보로 보여 줍니다.
+- **내 지역 주소 자료**: 설정 › 주소 검색에서 받아 두면, 기본 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
 - **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
@@ -364,11 +364,11 @@ async function candidatesFromResult(result, region) {
   const lines = result.lines?.length ? result.lines : null, texts = await labelFree(lines ? lines.map(line => line.text) : [result.text]);
   diag.trace = [];
   appliedCorrections = [];
-  const remembered = text => { if (!memoryOn()) return text; const r = memory.apply(text); appliedCorrections.push(...r.applied); return r.text; };
-  // The region's own data corrects a misread number and keeps an impossible one from converting by itself.
-  if (!lines) { const text = remembered(texts[0]); return {raw: correctCandidates(candidatesFromBlocks([text], region), localData), blocks: [text]}; }
+  // Road and 동 names misread by the camera are put right by the region's own data first.
+  const remembered = raw => { const text = correctNames(localData, raw); if (!memoryOn()) return text; const r = memory.apply(text); appliedCorrections.push(...r.applied); return r.text; };
+  if (!lines) { const text = remembered(texts[0]); return {raw: candidatesFromBlocks([text], region), blocks: [text]}; }
   const blocks = assembleElements(rowsFromBoxes(lines.map((line, i) => ({...line, text: remembered(texts[i])}))), developerMode() ? diag.trace : null);
-  return {raw: correctCandidates(candidatesFromSpatialBlocks(blocks, region), localData), blocks: blocks.map(b => b.text)};
+  return {raw: candidatesFromSpatialBlocks(blocks, region), blocks: blocks.map(b => b.text)};
 }
 
 /** Photo / selection recognition: one frame, same gates as the first live frame. */

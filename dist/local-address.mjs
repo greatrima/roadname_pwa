@@ -1,7 +1,7 @@
 // "내 지역 주소 자료": one 시·군·구's road address <-> parcel pairs (Ministry of the Interior and Safety public data,
 // split by scripts/local-data.py), kept on the phone so the region's addresses convert without the address servers,
 // offline too. Anything not found here is asked of the servers as before.
-import {extract, parseParts, Kind, COMPLETE} from './address-core.mjs';
+import {extract, parseParts, Kind} from './address-core.mjs';
 import {distance, jamo} from './address-memory.mjs';
 
 export const LOCAL_SOURCE = 'LOCAL';
@@ -95,35 +95,26 @@ export function lookupLocal(data, query) {
   return result(b, `${region} ${b.locality} ${parts.mountain ? '산 ' : ''}${parts.number}`, roads[0], Kind.PARCEL);
 }
 
-export const CORRECTED = '지역 자료 보정', MISSING = '지역에 없는 번지';
-const oneEdit = (a, b) => a !== b && Math.abs(a.length - b.length) <= 1 && distance(a, b, 2) === 1;
+const NAMED_NUMBER = /([가-힣][가-힣0-9]*[가-힣])\s*(산\s*)?(\d{1,5}(?:-\d{1,4})?)(?![\d-])/g;
 
 /**
- * What the camera read, checked against the region's data (same rules as the app's RegionCorrection): a number
- * the road has is real; one it lacks is never converted by itself, and the road's numbers one digit away (up to 3)
- * are offered to choose (not swapped in: house numbers are packed so close that such a guess was wrong almost as
- * often as right on real data); a name the region lacks, one letter away from exactly one that has this number, is
- * offered as a candidate. Another district, or no data: unchanged.
+ * The camera's reading with misread road and 동 names put right (same rules as the app's correctNames): a word
+ * before a number ("다슬로 175", "타슬로 175", "다솔르 175") that is no name of this district becomes the name of this
+ * district that looks most like it (up to two letter parts apart, one for short words; the numbers inside a name,
+ * as in 종로43길, must be the same) and has that very number. A tie between names, or none: left as read.
  */
-export function correctCandidates(candidates, data) {
-  if (!data) return candidates;
-  return candidates.flatMap(c => {
-    if (c.completeness !== COMPLETE || c.manualOnly) return [c];
-    const parts = parseParts(c.text);
-    if (!parts || parts.number == null || otherDistrict(parts, data)) return [c];
-    const road = parts.kind === Kind.ROAD, mark = road ? '' : parts.mountain ? '산' : '', key = mark + parts.number;
-    const table = road ? data.roadNumbers : data.parcelNumbers, known = table.get(parts.name);
-    if (known) {
-      if (known.has(key)) return [c];
-      const near = [...known].filter(n => n.startsWith(mark) && /^\d/.test(n.slice(mark.length)) && oneEdit(n, key));
-      const at = c.text.lastIndexOf(parts.number), offered = near.length <= 3 ? near.sort() : [];
-      return [{...c, manualOnly: true, reviewReason: MISSING}, ...offered.map(n => ({...c,
-        text: c.text.slice(0, at) + n.slice(mark.length) + c.text.slice(at + parts.number.length), manualOnly: true, dictionaryCorrected: true, reviewReason: CORRECTED}))];
-    }
-    const typed = jamo(parts.name), names = [...table.keys()].filter(n => distance(jamo(n), typed, 2) <= 1 && table.get(n).has(key));
-    if (names.length !== 1) return [c];
-    const at = c.text.lastIndexOf(parts.name);
-    return [c, {...c, text: c.text.slice(0, at) + names[0] + c.text.slice(at + parts.name.length), manualOnly: true, dictionaryCorrected: true, reviewReason: CORRECTED}];
+export function correctNames(data, text) {
+  if (!data) return text;
+  const digits = s => s.replace(/\D/g, '');
+  data.nameTable ??= [...data.roadNumbers, ...data.parcelNumbers].map(([name, numbers]) => ({name, jamo: jamo(name), digits: digits(name), numbers}));
+  return String(text).replace(NAMED_NUMBER, (whole, word, mountain, number) => {
+    if (data.roadNumbers.has(word) || data.parcelNumbers.has(word)) return whole;
+    const key = (mountain ? '산' : '') + number, typed = jamo(word), limit = typed.length >= 6 ? 2 : 1;
+    const inside = digits(word);
+    const hits = data.nameTable.filter(n => n.digits === inside && n.numbers.has(key))
+      .map(n => ({name: n.name, d: distance(n.jamo, typed, limit)})).filter(h => h.d <= limit);
+    const best = Math.min(...hits.map(h => h.d)), nearest = hits.filter(h => h.d === best);
+    return nearest.length === 1 ? whole.replace(word, nearest[0].name) : whole;
   });
 }
 
