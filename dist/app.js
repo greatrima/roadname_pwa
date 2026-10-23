@@ -5,21 +5,15 @@ import {
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
+import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.5';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **의견 보내기**: 답변받을 연락처를 남길 수 있고, 아래에서 카카오톡으로도 남길 수 있습니다.
-- **만든 사람**: 설정 › 정보에서 만든 사람의 사이트를 볼 수 있습니다.
-
-### 설정
-- 설정을 항목별 화면으로 나눠 길게 내리지 않아도 됩니다.
-
-### 고친 점
-- 일부 아이폰에서 주소를 고칠 때 입력칸이 키보드에 가려지던 문제를 고쳤습니다.
+- **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다. 구분대는 이름을 붙여 여러 개 저장할 수 있고, 글로 내보내고 불러올 수 있습니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -30,7 +24,7 @@ const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vwor
   kakao: 'roadname-kakao-key', map: 'roadname-map', engine: 'roadname-engine', continuous: 'roadname-continuous', offline: 'roadname-offline',
   developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
   alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
-  seenVersion: 'roadname-seen-version'};
+  seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -146,6 +140,7 @@ function setStatus(text) { $('statusText').textContent = text || ''; }
 function showDetails(details) { $('detailText').hidden = !details; $('detailText').textContent = details ? `상세주소·건물: ${details}` : ''; }
 function setMapAddress(address) { mapAddress = address; $('mapButton').disabled = !address; $('copyResult').disabled = !address; }
 function setConverted(text, tone = '') {
+  if (tone !== 'success' && shownResult) { shownResult = null; showSorting(); }
   const view = $('convertedText'), name = tone === 'success' ? parseParts(text)?.name : null, start = name ? text.indexOf(name) : -1;
   view.className = `converted-text${tone ? ` ${tone}` : ''}`;
   if (start < 0) { view.textContent = text; return; }
@@ -258,10 +253,14 @@ async function convertAddress(raw, confirmed = false) {
 }
 
 function showSuccess(r) {
-  awaitingNetwork = false; setMapAddress(r.convertedAddress); diag.finish('완료', r.convertedAddress);
-  setConverted(r.convertedAddress, 'success');
+  // While sorting, the address under the cell is in the form the rack's cells are written in.
+  const rack = sortingOn() ? activeRack() : null, shown = rack ? preferredForm(r, rack) : r.convertedAddress;
+  awaitingNetwork = false; setMapAddress(shown); diag.finish('완료', r.convertedAddress);
+  setConverted(shown, 'success');
   setStatus(`${SOURCE_LABEL[r.source]}에서 확인된 주소입니다.`);
-  signal(true);
+  shownResult = r;
+  const changed = showSorting(true);
+  signal(true, changed && sortingState().changeSound);
 }
 function showError(message) {
   awaitingNetwork = false; setMapAddress(null); diag.finish('검색 실패', message);
@@ -311,7 +310,7 @@ function unlockAudio() {
   try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') void audio.resume(); } catch {}
 }
 addEventListener('pointerdown', unlockAudio, {passive: true});
-function signal(ok) {
+function signal(ok, cellChanged = false) {
   if (navigator.vibrate && !flag(KEYS.alertVibrationOff)) { try { navigator.vibrate(ok ? 40 : [70, 90, 70]); } catch {} }
   // A failure is told by vibration alone; where the phone cannot vibrate (iPhone) a low tone takes its place.
   if (flag(KEYS.alertSoundOff) || (!ok && navigator.vibrate)) return;
@@ -322,6 +321,13 @@ function signal(ok) {
     tone.frequency.value = ok ? 1320 : 330;
     gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01); gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
     tone.connect(gain).connect(audio.destination); tone.start(now); tone.stop(now + length + 0.01);
+    if (ok && cellChanged) {
+      // "칸 바뀌면 다른 소리": a second beep right after the first.
+      const again = audio.createOscillator(), level = audio.createGain(), at = now + length + 0.06;
+      again.frequency.value = 1760;
+      level.gain.setValueAtTime(0.0001, at); level.gain.exponentialRampToValueAtTime(0.25, at + 0.01); level.gain.exponentialRampToValueAtTime(0.0001, at + length);
+      again.connect(level).connect(audio.destination); again.start(at); again.stop(at + length + 0.01);
+    }
   } catch {}
 }
 // Anonymous count of lookups that converted or found nothing: only the fixed path is sent, never the address.
@@ -709,11 +715,12 @@ $('copyResult').onclick = () => { if (mapAddress) { void copyText(mapAddress, '�
 $('convertedText').onclick = () => $('copyResult').onclick();
 $('mapButton').onclick = () => { openMap(); if (mapAddress) confirmUse(); };
 // ---- settings: a list of rows; "›" rows open a page of the same dialog, ← (or Esc / back) returns to the list ----
-let settingsPage = 'main';
+let settingsPage = 'main', settingsBackTo = 'main';
 function settingsValues() {
   const region = currentRegion();
   $('regionValue').textContent = (regionName(region) || '설정 안 됨') + (region.localities.length ? ` · ${region.localities.length}곳` : '');
   $('assistValue').textContent = memoryOn() ? '켜짐' : '꺼짐';
+  sortingValues();
   $('apiValue').textContent = store.get(KEYS.vworld) || store.get(KEYS.kakao) ? '개인 키' : store.get(KEYS.vworldDefault) ? '기본 키' : '설정 안 됨';
 }
 function showSettingsPage(name) {
@@ -722,8 +729,13 @@ function showSettingsPage(name) {
   settingsPage = page.dataset.page;
   const main = settingsPage === 'main';
   $('settingsTitle').textContent = page.dataset.title || '설정';
+  settingsBackTo = page.dataset.back || 'main';
   $('settingsBack').hidden = main; $('settingsIcon').hidden = !main; $('appVersionBadge').hidden = !main;
   if (settingsPage === 'feedback') $('feedbackMessage').textContent = '';
+  if (settingsPage === 'racks') renderRackList();
+  if (settingsPage === 'rack') renderRack(true);
+  if (settingsPage === 'assign') renderAssign();
+  if (settingsPage === 'import') { $('importText').value = ''; $('importMessage').textContent = ''; }
   settingsValues();
   $('settingsDialog').scrollTop = 0;
 }
@@ -735,8 +747,8 @@ function openSettings(page = 'main') {
   $('settingsDialog').showModal(); void loadRegions();
 }
 for (const button of document.querySelectorAll('#settingsDialog [data-open]')) button.onclick = () => showSettingsPage(button.dataset.open);
-$('settingsBack').onclick = () => showSettingsPage('main');
-$('settingsDialog').addEventListener('cancel', e => { if (settingsPage !== 'main') { e.preventDefault(); showSettingsPage('main'); } });
+$('settingsBack').onclick = () => showSettingsPage(settingsBackTo);
+$('settingsDialog').addEventListener('cancel', e => { if (settingsPage !== 'main' && settingsPage !== 'assign') { e.preventDefault(); showSettingsPage(settingsBackTo); } });
 $('settingsButton').onclick = () => openSettings(); $('regionButton').onclick = () => openSettings('region'); $('closeSettings').onclick = () => $('settingsDialog').close();
 $('regionProvince').onchange = () => { renderCities(); saveRegion(); };
 $('regionCity').onchange = () => { renderGus(); saveRegion(); };
@@ -814,6 +826,239 @@ $('closeWhatsNew').onclick = $('okWhatsNew').onclick = () => $('whatsNewDialog')
   store.set(KEYS.seenVersion, APP_VERSION);
   if (WHATS_NEW.trim() && (seen ? seen !== APP_VERSION : returning)) showWhatsNew();
 }
+
+// ---- "순로구분": which rack cell a converted address goes into (대구분). Several racks may be kept (내 구역, a
+// round covered for a colleague), one in use; each is named, exported as text and imported back (the app reads the
+// same text). Same rules as the Android app, in sorting.mjs. Kept in this browser only. ----
+let shownResult = null, lastCell = null, editingRack = null, editingCell = 1, rackResizing = false, rackGuideOpen = null, assignPieceText = null;
+function sortingState() {
+  try {
+    const s = JSON.parse(store.get(KEYS.sorting) || '{}');
+    return {enabled: !!s.enabled, active: s.active || null, changeSound: !!s.changeSound, racks: Array.isArray(s.racks) ? s.racks : []};
+  } catch { return {enabled: false, active: null, changeSound: false, racks: []}; }
+}
+const saveSorting = state => store.set(KEYS.sorting, JSON.stringify(state));
+const sortingOn = () => sortingState().enabled;
+const activeRack = (state = sortingState()) => state.racks.find(r => r.id === state.active) || state.racks[0] || null;
+function changeRack(id, change) { const state = sortingState(), rack = state.racks.find(r => r.id === id); if (rack) { change(rack); saveSorting(state); } }
+/** A new rack, named; a name already used gets "(2)", so an imported rack never replaces one. */
+function addRack(name, from = {}) {
+  const state = sortingState(), base = String(name || '').trim() || `구분대 ${state.racks.length + 1}`;
+  let unique = base;
+  for (let n = 2; state.racks.some(r => r.name === unique); n++) unique = `${base} (${n})`;
+  const rack = {columns: 0, rows: 0, labels: {}, priority: PRIORITY.ROAD, outside: null, ...from, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: unique};
+  state.racks.push(rack); state.active = rack.id; saveSorting(state);
+  return rack;
+}
+const roadForm = r => (r.recognizedKind === Kind.ROAD ? r.recognizedAddress : r.convertedAddress);
+const parcelForm = r => (r.recognizedKind === Kind.ROAD ? r.convertedAddress : r.recognizedAddress);
+const preferredForm = (r, rack) => (rack?.priority === PRIORITY.PARCEL ? parcelForm(r) : roadForm(r));
+const cellTone = cell => (cell % 2 ? 'odd' : 'even');
+function cellText(cell, tail = '') {
+  return [document.createTextNode(String(cell)), Object.assign(document.createElement('small'), {textContent: `칸${tail}`})];
+}
+
+/**
+ * The cell card over the converted address: "9칸" large in the cell's color (odd and even cells alternate, so
+ * moving on to the next cell always changes the color). `fresh` (a letter just read): a cell other than the last
+ * letter's deepens the card for a moment and the number pulses either way. Returns whether the cell changed.
+ */
+function showSorting(fresh = false) {
+  const card = $('sortingCard'), cell = $('sortingCell'), assign = $('sortingAssign'), state = sortingState(), r = shownResult;
+  $('appTitle').textContent = state.enabled ? `순로구분${activeRack(state) ? ` · ${activeRack(state).name}` : ''}` : '도로명변환기';
+  if (!state.enabled || !r) { card.className = ''; cell.hidden = true; assign.hidden = true; return false; }
+  const rack = activeRack(state);
+  const verdict = rack ? locate(rack, roadForm(r), parcelForm(r), `${lastOcr?.text || ''}\n${$('addressInput').value}`) : {state: 'notConfigured'};
+  cell.onclick = null;
+  let tone;
+  if (verdict.cell) {
+    tone = cellTone(verdict.cell);
+    cell.replaceChildren(...cellText(verdict.cell, verdict.outside ? ' 구역 밖' : ''));
+    cell.setAttribute('aria-label', `${verdict.cell}번 칸${verdict.outside ? ' (구역 밖)' : ''}`);
+  } else {
+    tone = {notMine: 'not-mine', unassigned: 'unassigned'}[verdict.state] || 'setup';
+    cell.textContent = {notMine: '구역 아님', unassigned: '칸 미지정'}[verdict.state] || '구분대 설정 ›';
+    cell.removeAttribute('aria-label');
+    if (verdict.state === 'notConfigured') cell.onclick = () => { if (rack) { editingRack = rack.id; openSettings('rack'); } else openSettings('racks'); };
+  }
+  card.className = `sorting-card ${tone}${verdict.cell ? '' : ' state'}`;
+  cell.hidden = false;
+  assign.hidden = verdict.state === 'notConfigured' || (verdict.cell && !verdict.outside);
+  if (!fresh || !verdict.cell) return false;
+  const changed = lastCell !== null && lastCell !== verdict.cell, turned = lastCell !== verdict.cell;
+  lastCell = verdict.cell;
+  cell.classList.remove('pulse'); void cell.offsetWidth; cell.classList.add('pulse');
+  if (turned) { card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash'); }
+  return changed;
+}
+$('sortingAssign').onclick = () => {
+  const rack = activeRack(), text = shownResult && rack ? piece(preferredForm(shownResult, rack)) : null;
+  if (!text) return;
+  assignPieceText = text; openSettings('assign');
+};
+
+function sortingValues() {
+  const state = sortingState(), rack = activeRack(state);
+  $('sortingModeButton').textContent = state.enabled ? '도로명변환기로 전환' : '순로구분 모드로 전환';
+  $('sortingSettings').hidden = !state.enabled;
+  $('rackValue').textContent = rack ? `${rack.name}${configured(rack) ? ` · ${rack.columns}×${rack.rows}` : ''}` : '설정 안 됨';
+  $('sortingPriority').value = rack?.priority || PRIORITY.ROAD;
+  $('sortingOutside').value = rack?.outside || '';
+  $('sortingChangeSound').checked = state.changeSound;
+}
+$('sortingModeButton').onclick = () => {
+  const state = sortingState();
+  state.enabled = !state.enabled; saveSorting(state);
+  showSorting();
+  // Switched on without a rack: straight to making one.
+  if (state.enabled && !activeRack()) { editingRack = addRack('내 구역').id; showSettingsPage('rack'); } else showSettingsPage('main');
+};
+$('sortingPriority').onchange = () => { const rack = activeRack(); if (rack) changeRack(rack.id, r => { r.priority = $('sortingPriority').value; }); };
+$('sortingOutside').onchange = () => {
+  const rack = activeRack(), value = parseInt($('sortingOutside').value, 10);
+  if (rack) changeRack(rack.id, r => { r.outside = value >= 1 && value <= cellCount(r) ? value : null; });
+  sortingValues();
+};
+$('sortingChangeSound').onchange = () => { const state = sortingState(); state.changeSound = $('sortingChangeSound').checked; saveSorting(state); };
+
+function renderRackList() {
+  const state = sortingState(), active = activeRack(state);
+  $('rackList').replaceChildren(...state.racks.map(rack => {
+    const row = document.createElement('div'), pick = document.createElement('button'), edit = document.createElement('button');
+    row.className = 'rack-row';
+    pick.className = `rack-pick${rack === active ? ' active' : ''}`;
+    pick.setAttribute('aria-pressed', String(rack === active));
+    pick.append(rack.name, Object.assign(document.createElement('small'), {textContent: configured(rack) ? `${rack.columns}×${rack.rows} · ${filledCount(rack)}칸` : '크기 설정 전'}));
+    pick.onclick = () => { const s2 = sortingState(); s2.active = rack.id; saveSorting(s2); renderRackList(); showSorting(); };
+    edit.className = 'secondary'; edit.textContent = '편집';
+    edit.setAttribute('aria-label', `${rack.name} 편집`);
+    edit.onclick = () => { editingRack = rack.id; showSettingsPage('rack'); };
+    row.append(pick, edit);
+    return row;
+  }));
+}
+$('newRack').onclick = () => { editingRack = addRack('').id; showSettingsPage('rack'); showSorting(); };
+$('openImport').onclick = () => showSettingsPage('import');
+
+const rackInEdit = () => sortingState().racks.find(r => r.id === editingRack) || null;
+function renderRack(load) {
+  const rack = rackInEdit();
+  if (!rack) { showSettingsPage('racks'); return; }
+  $('settingsTitle').textContent = rack.name;
+  if (load) {
+    $('rackName').value = rack.name; rackResizing = false; rackGuideOpen = null; editingCell = 1;
+    $('rackColumns').value = rack.columns || ''; $('rackRows').value = rack.rows || '';
+    $('rackSizeMessage').textContent = ''; $('exportMessage').textContent = ''; $('cellMessage').textContent = '';
+  }
+  const ok = configured(rack), filled = filledCount(rack), open = rackGuideOpen ?? filled === 0;
+  $('rackSizeSummary').hidden = !ok || rackResizing; $('rackSizeRow').hidden = ok && !rackResizing;
+  $('rackSizeText').textContent = ok ? `${rack.columns} × ${rack.rows}` : '';
+  $('rackGuideBody').hidden = !open; $('rackGuideTitle').textContent = `적는 법${open ? '' : '  ›'}`;
+  $('rackCells').hidden = !ok;
+  if (!ok) return;
+  editingCell = Math.min(Math.max(editingCell, 1), cellCount(rack));
+  $('rackCount').textContent = `${cellCount(rack)}칸 중 ${filled}칸`;
+  $('rackBar').style.width = `${Math.round(filled / cellCount(rack) * 100)}%`;
+  renderGrid($('rackGrid'), rack, editingCell, chooseCell);
+  $('cellEditor').className = `cell-editor ${cellTone(editingCell)}`;
+  $('cellTitle').replaceChildren(...cellText(editingCell));
+  $('cellTitle').setAttribute('aria-label', `${editingCell}번 칸`);
+  $('cellLabel').setAttribute('aria-label', `${editingCell}번 칸 주소`);
+  if (load || $('cellLabel').dataset.cell !== String(editingCell)) { $('cellLabel').value = rack.labels?.[editingCell] || ''; $('cellLabel').dataset.cell = String(editingCell); }
+  $('cellPrevious').disabled = editingCell <= 1;
+  renderChips();
+}
+/** Numbers only (a 6×6 rack leaves no room for text): cells with addresses in their color, the chosen one outlined. */
+function renderGrid(grid, rack, chosen, choose) {
+  grid.style.gridTemplateColumns = `repeat(${rack.columns}, minmax(0, 1fr))`;
+  grid.replaceChildren(...Array.from({length: cellCount(rack)}, (_, i) => {
+    const cell = i + 1, label = String(rack.labels?.[cell] || '').trim(), button = document.createElement('button');
+    button.textContent = String(cell);
+    button.className = [label ? cellTone(cell) : '', cell === chosen ? 'chosen' : ''].filter(Boolean).join(' ');
+    button.style.setProperty('--cell-accent', cell % 2 ? '#23407A' : '#16794C');
+    button.setAttribute('aria-label', `${cell}번 칸${label ? `, ${label}` : ''}`);
+    button.onclick = () => choose(cell);
+    return button;
+  }));
+}
+function renderChips() {
+  const {entries, problems} = parseLabel($('cellLabel').value);
+  $('cellChips').replaceChildren(...entries.map(e => Object.assign(document.createElement('span'), {textContent: describeEntry(e)})),
+    ...problems.map(p => Object.assign(document.createElement('span'), {className: 'problem', textContent: `읽지 못함 · ${p}`})));
+}
+/** Saves the chosen cell's addresses; the same address written just as narrowly in another cell is told. */
+function saveCell() {
+  const rack = rackInEdit();
+  if (!rack || !configured(rack)) return false;
+  const text = $('cellLabel').value.trim(), cell = editingCell;
+  const others = overlaps(rack, cell, text);
+  changeRack(rack.id, r => { r.labels = r.labels || {}; if (text) r.labels[cell] = text; else delete r.labels[cell]; });
+  $('cellMessage').textContent = others.length ? `${others.join(', ')}번 칸과 겹칩니다` : '';
+  return true;
+}
+function chooseCell(cell) { if (cell === editingCell) return; saveCell(); editingCell = cell; renderRack(false); }
+$('cellLabel').oninput = renderChips;
+$('cellNext').onclick = () => {
+  if (!saveCell()) return;
+  const rack = rackInEdit();
+  if (editingCell < cellCount(rack)) editingCell++; else $('cellMessage').textContent ||= '저장했습니다';
+  renderRack(false);
+};
+$('cellPrevious').onclick = () => { if (saveCell() && editingCell > 1) { editingCell--; renderRack(false); } };
+$('rackGuideTitle').onclick = () => { rackGuideOpen = $('rackGuideBody').hidden; renderRack(false); };
+$('rackResize').onclick = () => { rackResizing = true; renderRack(false); };
+$('rackApply').onclick = () => {
+  const columns = parseInt($('rackColumns').value, 10), rows = parseInt($('rackRows').value, 10);
+  if (!(columns >= 1 && columns <= 12 && rows >= 1 && rows <= 12)) { $('rackSizeMessage').textContent = '가로·세로는 1~12칸'; return; }
+  changeRack(editingRack, r => { r.columns = columns; r.rows = rows; });
+  rackResizing = false; $('rackSizeMessage').textContent = ''; renderRack(false); showSorting();
+};
+$('rackName').onchange = () => {
+  const name = $('rackName').value.trim();
+  if (name) changeRack(editingRack, r => { r.name = name; });
+  $('settingsTitle').textContent = rackInEdit()?.name || ''; showSorting();
+};
+$('exportRack').onclick = async () => {
+  saveCell();
+  const text = exportText(rackInEdit());
+  try {
+    if (navigator.share) await navigator.share({title: rackInEdit().name, text});
+    else { await navigator.clipboard.writeText(text); $('exportMessage').textContent = '복사했습니다. 메모나 카톡에 붙여 넣어 두세요.'; }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;
+    try { await navigator.clipboard.writeText(text); $('exportMessage').textContent = '복사했습니다. 메모나 카톡에 붙여 넣어 두세요.'; } catch { $('exportMessage').textContent = '내보내지 못했습니다.'; }
+  }
+};
+$('deleteRack').onclick = () => {
+  const rack = rackInEdit();
+  if (!rack || !confirm(`${rack.name}을(를) 지울까요?`)) return;
+  const state = sortingState();
+  state.racks = state.racks.filter(r => r.id !== rack.id);
+  if (state.active === rack.id) state.active = state.racks[0]?.id || null;
+  saveSorting(state); showSorting(); showSettingsPage('racks');
+};
+$('importText').oninput = () => {
+  const read = importText($('importText').value);
+  $('importMessage').textContent = !$('importText').value.trim() ? '' : !read ? '도로명변환기 구분대 글이 아닙니다.'
+    : `${read.rack.name} · ${read.rack.columns}×${read.rack.rows} · ${filledCount(read.rack)}칸을 불러옵니다.${read.problems.length ? ` 읽지 못한 줄 ${read.problems.length}개` : ''}`;
+};
+$('importConfirm').onclick = () => {
+  const read = importText($('importText').value);
+  if (!read) { $('importMessage').textContent = '도로명변환기 구분대 글이 아닙니다.'; return; }
+  addRack(read.rack.name, read.rack);
+  showSorting(); showSettingsPage('racks');
+};
+function renderAssign() {
+  const rack = activeRack();
+  $('assignPiece').textContent = assignPieceText || '';
+  if (!rack || !configured(rack)) { $('assignGrid').replaceChildren(); return; }
+  renderGrid($('assignGrid'), rack, 0, cell => {
+    changeRack(rack.id, r => { r.labels = r.labels || {}; const old = String(r.labels[cell] || '').trim(); r.labels[cell] = old ? `${old}, ${assignPieceText}` : assignPieceText; });
+    $('settingsDialog').close(); showSorting(); setStatus(`${cell}칸에 추가했습니다`);
+  });
+}
+showSorting();
+
 // ---- keyboard: some iPhones (home-screen app) do not shrink the page for the keyboard, so the box being edited
 // could stay behind it. While the keyboard is up the app and its dialogs take the visible height only, and the
 // box is scrolled into the middle of it. ----

@@ -8,7 +8,7 @@
   <title>도로명변환기</title>
   <link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2">
   <link rel="icon" type="image/png" href="./icon-192.png?v=2">
-  <link rel="stylesheet" href="./style.css?v=21">
+  <link rel="stylesheet" href="./style.css?v=22">
 </head>
 <body>
  <main class="app-shell">
@@ -25,7 +25,7 @@
    <input id="upload" type="file" accept="image/*" hidden><input id="nativeCapture" type="file" accept="image/*" capture="environment" hidden>
   </section>
   <section class="information-panel">
-   <header class="toolbar"><h1>도로명변환기</h1><button id="offlineBadge" class="badge" hidden></button><button id="settingsButton" class="toolbar-button" aria-label="설정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg><span>설정</span></button></header>
+   <header class="toolbar"><h1 id="appTitle">도로명변환기</h1><button id="offlineBadge" class="badge" hidden></button><button id="settingsButton" class="toolbar-button" aria-label="설정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg><span>설정</span></button></header>
    <div id="informationScroll" class="information-scroll">
     <div id="installHint" class="install-hint" hidden><span id="installText">공유 <svg viewBox="0 0 24 24" aria-label="공유 버튼"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-2"/></svg> → <b>홈 화면에 추가</b>로 앱처럼 쓰세요</span><button id="closeInstallHint" aria-label="안내 닫기">×</button></div>
     <div class="quick-row"><button id="regionButton" class="chip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><span id="regionName">지역 설정 안 됨</span></button><div id="cropTools" class="crop-tools" hidden><button id="selectAll" class="subtle">전체 선택</button><button id="rotate" class="subtle">90° 회전</button></div></div>
@@ -37,7 +37,9 @@
      <p id="detailText" class="detail-text" hidden></p>
     </section>
     <section class="field result-field" aria-label="변환 결과">
+     <div id="sortingCard"><p id="sortingCell" class="sorting-cell" aria-live="polite" hidden></p>
      <div class="result-row"><p id="convertedText" class="converted-text">기준 주소를 인식하거나 입력해주세요</p><button id="copyResult" class="copy-button" aria-label="변환 주소 복사" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H5a1 1 0 0 0-1 1v12"/><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M8 8V4h8v4"/></svg></button></div>
+     <button id="sortingAssign" class="secondary" hidden>칸 지정</button></div>
      <p id="statusText" class="status-text" aria-live="polite"></p>
      <button id="mapButton" class="secondary map-button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14m6-12v14"/></svg><span>지도에서 보기</span></button>
     </section>
@@ -50,6 +52,14 @@
  </main>
  <dialog id="settingsDialog"><div class="dialog-head"><button id="settingsBack" class="iconbutton" aria-label="뒤로" hidden>←</button><h2 class="settings-title"><img id="settingsIcon" src="./jebichan-icon.png" alt="" width="30" height="30"><span id="settingsTitle">설정</span></h2><span id="appVersionBadge" class="version-badge"></span><button id="closeSettings" class="iconbutton" aria-label="설정 닫기">×</button></div>
   <div class="settings-page" data-page="main">
+  <div class="setting-list"><button id="sortingModeButton">순로구분 모드로 전환</button></div>
+  <div id="sortingSettings" hidden>
+  <h3>순로구분</h3>
+  <div class="setting-list"><button data-open="racks">구분대 <span class="row-end"><span class="row-value" id="rackValue"></span><span aria-hidden="true">›</span></span></button></div>
+  <div class="setting-group"><label for="sortingPriority">주소 기준</label><select id="sortingPriority"><option value="ROAD">도로명 우선</option><option value="PARCEL">지번 우선</option></select></div>
+  <div class="setting-group"><label for="sortingOutside">구역 밖 칸</label><input id="sortingOutside" type="text" inputmode="numeric" placeholder="없음"></div>
+  <label class="toggle"><input type="checkbox" id="sortingChangeSound">칸 바뀌면 다른 소리</label>
+  </div>
   <h3>인식</h3>
   <div class="setting-list"><button data-open="region">우선 인식 지역 <span class="row-end"><span class="row-value" id="regionValue"></span><span aria-hidden="true">›</span></span></button><button data-open="assist">인식 보조 <span class="row-end"><span class="row-value" id="assistValue"></span><span aria-hidden="true">›</span></span></button><button data-open="buttons">노출 버튼 관리 <span aria-hidden="true">›</span></button></div>
   <div class="setting-group"><label for="engine">인식 방식</label><select id="engine"><option value="paddle">PaddleOCR · 한국어</option><option value="tesseract">Tesseract · 한국어 + 영어</option><option value="compare">두 방식 비교</option></select></div>
@@ -93,6 +103,39 @@
   <hr class="page-divider">
   <a id="feedbackChat" class="link-button" href="https://open.kakao.com/o/sPEPFpRi" target="_blank" rel="noopener">카카오톡으로 남기기</a>
   </div>
+  <div class="settings-page" data-page="racks" data-title="구분대" hidden>
+  <div id="rackList" class="rack-list"></div>
+  <div class="rack-actions"><button id="newRack" class="secondary">새로 만들기</button><button id="openImport" class="secondary">불러오기</button></div>
+  </div>
+  <div class="settings-page" data-page="rack" data-title="구분대" data-back="racks" hidden>
+  <div class="setting-group"><label for="rackName">이름</label><input id="rackName" type="text" maxlength="30" autocomplete="off"></div>
+  <div id="rackSizeSummary" class="rack-size"><strong id="rackSizeText"></strong><button id="rackResize" class="text-button">크기 변경</button></div>
+  <div id="rackSizeRow" class="rack-size-row"><input id="rackColumns" type="text" inputmode="numeric" maxlength="2" aria-label="가로 칸" placeholder="가로 칸"><span aria-hidden="true">×</span><input id="rackRows" type="text" inputmode="numeric" maxlength="2" aria-label="세로 칸" placeholder="세로 칸"><button id="rackApply" class="primary">적용</button></div>
+  <p id="rackSizeMessage" class="cache-message" role="status"></p>
+  <div class="rack-guide"><button id="rackGuideTitle" class="rack-guide-title">적는 법</button><dl id="rackGuideBody"><dt>우정1길 1~19</dt><dd>1번부터 19번까지 · 양 끝이 홀수면 홀수만</dd><dt>우정1길 28~2</dt><dd>거꾸로 써도 같음 (2~28 짝수만)</dd><dt>누정동 127-3</dt><dd>127번지 부번 3</dd><dt>누정동 127-1~127-13</dt><dd>127번지 부번 1부터 13까지</dd><dt>우정1길 2~20, 우정길 88</dt><dd>여러 주소는 쉼표로</dd></dl></div>
+  <div id="rackCells">
+  <div class="rack-progress"><span id="rackCount"></span><div class="rack-bar"><div id="rackBar"></div></div></div>
+  <div id="rackGrid" class="rack-grid"></div>
+  <div id="cellEditor" class="cell-editor">
+  <div id="cellTitle" class="cell-title"></div>
+  <textarea id="cellLabel" rows="2" placeholder="우정1길 1~19, 누정동 127-3" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+  <div id="cellChips" class="cell-chips"></div>
+  <p id="cellMessage" class="cache-message" role="status"></p>
+  <div class="cell-buttons"><button id="cellPrevious" class="secondary">이전</button><button id="cellNext" class="primary">저장하고 다음 칸</button></div>
+  </div>
+  <div class="rack-actions"><button id="exportRack" class="secondary">내보내기</button><button id="deleteRack" class="secondary">삭제</button></div>
+  <p id="exportMessage" class="cache-message" role="status"></p>
+  </div>
+  </div>
+  <div class="settings-page" data-page="import" data-title="불러오기" data-back="racks" hidden>
+  <textarea id="importText" rows="8" aria-label="불러올 글" placeholder="도로명변환기 구분대 · 내 구역 · 6×6" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+  <p id="importMessage" class="cache-message" role="status"></p>
+  <button id="importConfirm" class="primary wide">불러오기</button>
+  </div>
+  <div class="settings-page" data-page="assign" data-title="칸 지정" hidden>
+  <p id="assignPiece" class="assign-piece"></p>
+  <div id="assignGrid" class="rack-grid"></div>
+  </div>
   <div class="settings-page" data-page="share" data-title="공유" hidden><img class="share-qr" src="./share-qr.png" alt="도로명변환기 주소 QR 코드" width="220" height="220" loading="lazy"></div>
   <div class="settings-page maker" data-page="maker" data-title="만든 사람" hidden><img src="./sanbug-logo.png" alt="산벌레 로고" width="180" height="180" loading="lazy"><a class="link-button" href="https://sanbug.net/" target="_blank" rel="noopener">sanbug.net</a></div>
  </dialog>
@@ -103,5 +146,5 @@
  <!-- Anonymous counts (GoatCounter, no cookies): only /app (home-screen) or /web (browser), plus /ok or /fail for a lookup; never addresses or photos. -->
  <script>window.goatcounter={path:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'/app':'/web',title:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'홈 화면 앱':'브라우저'};</script>
  <script data-goatcounter="https://greatrima.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
- <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=21"></script>
+ <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=22"></script>
 </body></html>

@@ -152,6 +152,60 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .whats-new h3{font-size:15px;color:#17202b}
 .whats-new ul{padding-left:20px;font-size:15px;line-height:1.55;margin:6px 0}
 #okWhatsNew{margin-top:16px}
+.toolbar h1{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sortingCard.sorting-card{background:var(--tint);border-radius:16px;padding:14px 10px 14px 14px;margin:2px 0 8px}
+.sorting-card.odd{--tint:#E8EEF8;--flash:#C3D2EE;--accent:#23407A}
+.sorting-card.even{--tint:#E4F2EA;--flash:#BCE1CA;--accent:#16794C}
+.sorting-card.not-mine{--tint:#FCEBEB;--accent:#B42318}
+.sorting-card.unassigned{--tint:#FDF1E3;--accent:#B54708}
+.sorting-card.setup{--tint:#EEF1F5;--accent:#0E1B2A}
+.sorting-card.flash{animation:sorting-flash 1s ease-out}
+@keyframes sorting-flash{from{background:var(--flash)}to{background:var(--tint)}}
+.sorting-cell{margin:0 0 10px;padding-bottom:10px;font-size:72px;line-height:1;font-weight:800;color:var(--accent);border-bottom:1px solid rgba(0,0,0,.08);transform-origin:left center}
+.sorting-cell small{font-size:.4em;font-weight:800;margin-left:2px}
+.sorting-card.state .sorting-cell{font-size:34px;cursor:default}
+.sorting-card.setup .sorting-cell{cursor:pointer}
+.sorting-cell.pulse{animation:sorting-pulse .18s ease-out}
+@keyframes sorting-pulse{from{transform:scale(1.12)}to{transform:none}}
+.sorting-card .converted-text.success{color:#17202b}
+#sortingAssign{margin-top:8px}
+.rack-list{display:grid;gap:8px;margin-top:4px}
+.rack-row{display:flex;gap:8px;align-items:stretch}
+.rack-row .rack-pick{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:white;border:1px solid #dce1e8;border-radius:12px;padding:10px 14px;font-weight:700}
+.rack-row .rack-pick.active{border:2px solid #23407A;background:#E8EEF8}
+.rack-row .rack-pick small{font-weight:500;color:var(--muted)}
+.rack-actions{display:flex;gap:8px;margin-top:14px}
+.rack-actions button{flex:1}
+.rack-size{display:flex;align-items:center;justify-content:space-between;margin-top:14px;min-height:44px}
+.rack-size strong{font-size:16px}
+.text-button{background:none;color:#23407A;min-height:44px;padding:8px}
+.rack-size-row{display:flex;align-items:center;gap:8px;margin-top:14px}
+.rack-size-row input{width:0;flex:1;min-width:0}
+.rack-guide{margin-top:12px;background:white;border:1px solid #dce1e8;border-radius:16px}
+.rack-guide-title{width:100%;text-align:left;background:none;font-size:15px;min-height:46px;padding:10px 14px}
+.rack-guide dl{margin:0;padding:0 14px 14px}
+.rack-guide dt{font-weight:700;color:#23407A;font-size:14px}
+.rack-guide dd{margin:0 0 8px;color:var(--muted);font-size:13px}
+.rack-progress{margin-top:14px;font-size:13px;color:var(--muted)}
+.rack-bar{height:6px;border-radius:3px;background:#dce1e8;margin-top:6px;overflow:hidden}
+.rack-bar div{height:100%;background:#16794C;border-radius:3px}
+.rack-grid{display:grid;gap:6px;margin-top:12px}
+.rack-grid button{min-height:46px;padding:0;border-radius:10px;background:white;border:1px solid #dce1e8;color:#8a94a6;font-weight:500;font-size:16px}
+.rack-grid button.odd{background:#E8EEF8;color:#23407A;border-color:transparent;font-weight:800}
+.rack-grid button.even{background:#E4F2EA;color:#16794C;border-color:transparent;font-weight:800}
+.rack-grid button.chosen{border:3px solid var(--cell-accent,#23407A);color:var(--cell-accent,#23407A);font-weight:800}
+.cell-editor{margin-top:14px;border-radius:16px;padding:14px;background:var(--tint,#E8EEF8)}
+.cell-editor.odd{--tint:#E8EEF8;--accent:#23407A}
+.cell-editor.even{--tint:#E4F2EA;--accent:#16794C}
+.cell-title{font-size:34px;font-weight:800;line-height:1;color:var(--accent)}
+.cell-title small{font-size:.5em}
+#cellLabel,#importText{width:100%;margin-top:12px;padding:12px;border:1px solid #dce1e8;border-radius:10px;font-size:16px;background:white;color:#17202b;resize:vertical}
+.cell-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.cell-chips span{font-size:13px;padding:5px 10px;border-radius:14px;background:white;color:#16794C}
+.cell-chips span.problem{background:#FCEBEB;color:#B42318}
+.cell-buttons{display:flex;gap:8px;margin-top:12px}
+.cell-buttons .primary{flex:1}
+.assign-piece{font-size:16px;font-weight:700;margin:4px 0 0}
 .row-end{display:flex;align-items:center;gap:8px;min-width:0}
 .setting-list button .row-value{font-size:14px;font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
 #settingsBack{font-size:22px;margin-right:-4px}
