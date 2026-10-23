@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLocal, lookupLocal, buildingByName, correctNames} from '../dist/local-address.mjs';
+import {parseLocal, lookupLocal, buildingByName, correctNames, rememberDistrict, autoDistrict} from '../dist/local-address.mjs';
 
 // Invented names only, in the format scripts/local-data.py writes.
 const district = [
@@ -57,4 +57,21 @@ test('local data: misread road and 동 names are put right by the region\'s name
   assert.equal(correctNames(null, '다슬로 7'), '다슬로 7');
   const numbered = parseLocal(['# address-lens-local-v1', '# district=울산광역시 복판구', 'R\t누정40길', 'R\t누정43길', 'L\t누정동', 'B\t0\t9\t0\t1\t', 'B\t1\t9\t0\t2\t'].join('\n'));
   assert.equal(correctNames(numbered, '누장43길 9'), '누정43길 9', 'the number inside the name decides');
+});
+
+test('local data: without a chosen region, the district of the lately converted addresses is found', () => {
+  const converted = (address, source = 'VWORLD') => ({recognizedAddress: address, convertedAddress: address, recognizedKind: 'ROAD', source});
+  let recent = [];
+  for (const a of ['울산광역시 복판구 누정4길 50', '울산광역시 복판구 누정4길 52']) recent = rememberDistrict(recent, converted(a));
+  assert.equal(autoDistrict(recent), null, 'two are not enough');
+  // A bulk sender's letters count once.
+  for (let i = 0; i < 5; i++) recent = rememberDistrict(recent, converted('경기도 솔내시 새움구 다솔로 7'));
+  assert.equal(recent.length, 3);
+  recent = rememberDistrict(recent, converted('울산광역시 복판구 다솔로 11'));
+  assert.deepEqual(autoDistrict(recent), {province: '울산광역시', district: '복판구'});
+  assert.equal(rememberDistrict(recent, converted('울산광역시 복판구 다솔로 13', 'LOCAL')), recent, "the region's own data adds nothing");
+  // Only the last 20 different addresses count: the round moved.
+  for (let n = 1; n <= 20; n++) recent = rememberDistrict(recent, converted(`경기도 솔내시 새움구 다솔로 ${n}`));
+  assert.deepEqual(autoDistrict(recent), {province: '경기도', district: '솔내시 새움구'});
+  assert.equal(autoDistrict([{key: 'a', district: '가|나'}, {key: 'b', district: '가|나'}, {key: 'c', district: '가|나'}, {key: 'd', district: '다|라'}, {key: 'e', district: '다|라'}, {key: 'f', district: '다|라'}]), null, 'a tie');
 });

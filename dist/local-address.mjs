@@ -1,7 +1,7 @@
 // "내 지역 주소 자료": one 시·군·구's road address <-> parcel pairs (Ministry of the Interior and Safety public data,
 // split by scripts/local-data.py), kept on the phone so the region's addresses convert without the address servers,
 // offline too. Anything not found here is asked of the servers as before.
-import {extract, parseParts, Kind} from './address-core.mjs';
+import {extract, parseParts, normalizeKey, Kind} from './address-core.mjs';
 import {distance, jamo} from './address-memory.mjs';
 
 export const LOCAL_SOURCE = 'LOCAL';
@@ -116,6 +116,32 @@ export function correctNames(data, text) {
     const best = Math.min(...hits.map(h => h.d)), nearest = hits.filter(h => h.d === best);
     return nearest.length === 1 ? whole.replace(word, nearest[0].name) : whole;
   });
+}
+
+// ---- the region found by itself, for those who chose none: the 시·군·구 of the addresses converted lately ----
+export const RECENT = 20, ENOUGH = 3;
+
+/**
+ * `recent` with a server-converted address added: its 시·군·구 and a key of the address, newest first, each address
+ * once (a bulk sender's 100 letters count as one), at most RECENT. Addresses of the region's own data add nothing.
+ */
+export function rememberDistrict(recent, result) {
+  if (!result || result.source === LOCAL_SOURCE) return recent;
+  const parts = parseParts(result.convertedAddress) || parseParts(result.recognizedAddress);
+  const district = parts?.prefix.slice(1).join(' ');
+  if (!parts || !parts.prefix[0] || !district) return recent;
+  const key = normalizeKey(result.convertedAddress), entry = {key, district: `${parts.prefix[0]}|${district}`};
+  return [entry, ...(recent || []).filter(e => e.key !== key)].slice(0, RECENT);
+}
+
+/** {province, district} that most of the recent addresses are in, when ENOUGH of them are and none ties it. */
+export function autoDistrict(recent) {
+  const counts = new Map();
+  for (const e of recent || []) counts.set(e.district, (counts.get(e.district) || 0) + 1);
+  const ranked = [...counts].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length || ranked[0][1] < ENOUGH || ranked[1]?.[1] === ranked[0][1]) return null;
+  const [province, district] = ranked[0][0].split('|');
+  return {province, district};
 }
 
 /** Text of a gzip file. */
