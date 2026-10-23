@@ -10,11 +10,11 @@ import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCo
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.6.5';
+const APP_VERSION = '1.6.6';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **내 지역 주소 자료**: 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 새 달 자료가 나오면 저절로 바꿔 받습니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
+- **내 지역 주소 자료**: 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
 - **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
@@ -26,8 +26,7 @@ const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vwor
   kakao: 'roadname-kakao-key', map: 'roadname-map', engine: 'roadname-engine', continuous: 'roadname-continuous', offline: 'roadname-offline',
   developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
   alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
-  seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts',
-  localChecked: 'roadname-local-checked'};
+  seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -1131,16 +1130,8 @@ async function downloadLocalData(quiet = false, chosen = null, auto = false) {
   } catch { $('localMessage').textContent = '받지 못했습니다. 잠시 뒤 다시 눌러 주세요.'; }
   localValues();
 }
-/** Once a day the data taken is checked against the newest month and, when a newer one is out, replaced by itself. */
-function refreshLocalData() {
-  const meta = localMeta();
-  if (!meta || !online() || Date.now() - Number(store.get(KEYS.localChecked) || 0) < 864e5) return;
-  store.set(KEYS.localChecked, String(Date.now()));
-  void downloadLocalData(true, meta.province ? {province: meta.province, district: meta.district} : null, !!meta.auto);
-}
 $('localDataButton').onclick = () => downloadLocalData();
-void loadLocalData().then(() => { localValues(); refreshLocalData(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshLocalData(); });
+void loadLocalData().then(localValues);
 
 // ---- keyboard: some iPhones (home-screen app) do not shrink the page for the keyboard, so the box being edited
 // could stay behind it. While the keyboard is up the app and its dialogs take the visible height only, and the
