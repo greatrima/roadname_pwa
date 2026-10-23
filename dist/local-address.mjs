@@ -1,7 +1,8 @@
 // "내 지역 주소 자료": one 시·군·구's road address <-> parcel pairs (Ministry of the Interior and Safety public data,
 // split by scripts/local-data.py), kept on the phone so the region's addresses convert without the address servers,
 // offline too. Anything not found here is asked of the servers as before.
-import {extract, parseParts, Kind} from './address-core.mjs';
+import {extract, parseParts, Kind, COMPLETE} from './address-core.mjs';
+import {distance, jamo} from './address-memory.mjs';
 
 export const LOCAL_SOURCE = 'LOCAL';
 const HEADER = '# address-lens-local-v1';
@@ -37,7 +38,11 @@ export function parseLocal(text) {
   const [province = '', ...rest] = (meta.district || '').split(' ');
   // Longest names first, so "한빛아파트 2단지" is found before "한빛아파트".
   const names = [...byName.keys()].sort((a, b) => b.length - a.length);
-  return {version: meta.version || '', province, district: rest.join(' '), byRoad, byParcel, byName, names};
+  // Building numbers of each road ("50", "u396") and parcels of each 동·리 ("127", "산12").
+  const roadNumbers = new Map(), parcelNumbers = new Map();
+  for (const b of byRoad.values()) roadNumbers.set(b.road, (roadNumbers.get(b.road) || new Set()).add(b.number));
+  for (const key of byParcel.keys()) { const [l, p] = key.split('|'); parcelNumbers.set(l, (parcelNumbers.get(l) || new Set()).add(p)); }
+  return {version: meta.version || '', province, district: rest.join(' '), byRoad, byParcel, byName, names, roadNumbers, parcelNumbers};
 }
 
 /** A 시·군·구 named in the address that is not this district's: the address is someone else's to look up. */
@@ -88,6 +93,38 @@ export function lookupLocal(data, query) {
   if (roads.length !== 1) return null;
   const b = found[0];
   return result(b, `${region} ${b.locality} ${parts.mountain ? '산 ' : ''}${parts.number}`, roads[0], Kind.PARCEL);
+}
+
+export const CORRECTED = '지역 자료 보정', MISSING = '지역에 없는 번지';
+const oneEdit = (a, b) => a !== b && Math.abs(a.length - b.length) <= 1 && distance(a, b, 2) === 1;
+
+/**
+ * What the camera read, checked against the region's data (same rules as the app's RegionCorrection): a number
+ * the road has is real; one it lacks is never converted by itself, and the road's numbers one digit away (up to 3)
+ * are offered to choose (not swapped in: house numbers are packed so close that such a guess was wrong almost as
+ * often as right on real data); a name the region lacks, one letter away from exactly one that has this number, is
+ * offered as a candidate. Another district, or no data: unchanged.
+ */
+export function correctCandidates(candidates, data) {
+  if (!data) return candidates;
+  return candidates.flatMap(c => {
+    if (c.completeness !== COMPLETE || c.manualOnly) return [c];
+    const parts = parseParts(c.text);
+    if (!parts || parts.number == null || otherDistrict(parts, data)) return [c];
+    const road = parts.kind === Kind.ROAD, mark = road ? '' : parts.mountain ? '산' : '', key = mark + parts.number;
+    const table = road ? data.roadNumbers : data.parcelNumbers, known = table.get(parts.name);
+    if (known) {
+      if (known.has(key)) return [c];
+      const near = [...known].filter(n => n.startsWith(mark) && /^\d/.test(n.slice(mark.length)) && oneEdit(n, key));
+      const at = c.text.lastIndexOf(parts.number), offered = near.length <= 3 ? near.sort() : [];
+      return [{...c, manualOnly: true, reviewReason: MISSING}, ...offered.map(n => ({...c,
+        text: c.text.slice(0, at) + n.slice(mark.length) + c.text.slice(at + parts.number.length), manualOnly: true, dictionaryCorrected: true, reviewReason: CORRECTED}))];
+    }
+    const typed = jamo(parts.name), names = [...table.keys()].filter(n => distance(jamo(n), typed, 2) <= 1 && table.get(n).has(key));
+    if (names.length !== 1) return [c];
+    const at = c.text.lastIndexOf(parts.name);
+    return [c, {...c, text: c.text.slice(0, at) + names[0] + c.text.slice(at + parts.name.length), manualOnly: true, dictionaryCorrected: true, reviewReason: CORRECTED}];
+  });
 }
 
 /** Text of a gzip file. */
