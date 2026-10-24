@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLocal, lookupLocal, buildingByName, correctNames, rememberDistrict, autoDistrict} from '../dist/local-address.mjs';
+import {parseLocal, lookupLocal, buildingByName, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from '../dist/local-address.mjs';
 
 // Invented names only, in the format scripts/local-data.py writes.
 const district = [
@@ -74,4 +74,29 @@ test('local data: without a chosen region, the district of the lately converted 
   for (let n = 1; n <= 20; n++) recent = rememberDistrict(recent, converted(`경기도 솔내시 새움구 다솔로 ${n}`));
   assert.deepEqual(autoDistrict(recent), {province: '경기도', district: '솔내시 새움구'});
   assert.equal(autoDistrict([{key: 'a', district: '가|나'}, {key: 'b', district: '가|나'}, {key: 'c', district: '가|나'}, {key: 'd', district: '다|라'}, {key: 'e', district: '다|라'}, {key: 'f', district: '다|라'}]), null, 'a tie');
+});
+
+test('local data: a whole city of several 구 is joined and keeps each 구 in its addresses (as in the app)', () => {
+  const east = ['# address-lens-local-v1', '# version=202609', '# district=경기도 솔내시 동녘구', 'R\t새움로', 'L\t버들동', 'L\t눤곡동', 'B\t0\t5\t0\t10\t1:11'].join('\n');
+  const west = ['# address-lens-local-v1', '# version=202609', '# district=경기도 솔내시 서녘구', 'R\t다솔로', 'L\t모래동', 'B\t0\t8\t0\t20\t'].join('\n');
+  const data = parseLocal(mergeLocal([east, west]));
+  assert.equal(data.district, '솔내시');
+  assert.equal(lookupLocal(data, '새움로 5').convertedAddress, '경기도 솔내시 동녘구 버들동 10');
+  assert.equal(lookupLocal(data, '솔내시 다솔로 8').convertedAddress, '경기도 솔내시 서녘구 모래동 20');
+  assert.equal(lookupLocal(data, '눤곡동 11').convertedAddress, '경기도 솔내시 동녘구 새움로 5', 'a related parcel keeps its locality');
+  assert.equal(lookupLocal(data, '누정시 다솔로 8'), null, "another 시 is someone else's");
+  assert.equal(mergeLocal([east]), east);
+});
+
+test('local data: a city chosen without its 구 takes every 구, and 세종 is found', () => {
+  const index = [
+    {code: '1', province: '경기도', district: '솔내시 동녘구'}, {code: '2', province: '경기도', district: '솔내시 서녘구'},
+    {code: '3', province: '경기도', district: '솔내군'}, {code: '4', province: '세종특별자치시', district: ''},
+  ];
+  const codes = region => localEntries(index, region).map(e => e.code);
+  assert.deepEqual(codes({province: '경기도', district: '솔내시'}), ['1', '2']);
+  assert.deepEqual(codes({province: '경기도', district: '솔내시 서녘구'}), ['2']);
+  assert.deepEqual(codes({province: '경기도', district: '솔내군'}), ['3'], 'not a prefix of another name');
+  assert.deepEqual(codes({province: '세종특별자치시', district: '세종특별자치시'}), ['4']);
+  assert.deepEqual(codes({province: '강원특별자치도', district: '솔내시'}), []);
 });

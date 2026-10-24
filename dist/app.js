@@ -5,16 +5,16 @@ import {
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
-import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict} from './local-address.mjs';
+import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from './local-address.mjs';
 import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.6.7';
+const APP_VERSION = '1.6.8';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **오프라인 데이터**: 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
+- **오프라인 데이터**: 우선 인식 지역을 시까지만 골라도 그 시의 구 자료를 모두 받습니다. 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
 - **오프라인 모드**: 설정의 오프라인 모드에서 켜면 주소 서버 없이 받아 둔 내 지역 자료로만 변환합니다. 오프라인 데이터 다운로드도 이 안으로 옮겼습니다.
 - **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
 `;
@@ -1099,8 +1099,14 @@ async function loadLocalData() {
   const meta = localMeta();
   if (!meta) return;
   try {
-    const saved = await (await caches.open(LOCAL_CACHE)).match(`./local/${meta.code}.tsv.gz`);
-    if (saved) localData = parseLocal(await gunzipText(new Uint8Array(await saved.arrayBuffer())));
+    // One district, or every 구 of a whole 시 ("41271+41273") joined.
+    const cache = await caches.open(LOCAL_CACHE), texts = [];
+    for (const code of meta.code.split('+')) {
+      const saved = await cache.match(`./local/${code}.tsv.gz`);
+      if (!saved) return;
+      texts.push(await gunzipText(new Uint8Array(await saved.arrayBuffer())));
+    }
+    localData = parseLocal(mergeLocal(texts));
   } catch { localData = null; }
 }
 /** Takes the default region's district file; `quiet` (a region change) tells nothing unless it fails. */
@@ -1113,25 +1119,31 @@ async function downloadLocalData(quiet = false, chosen = null, auto = false) {
   if (!quiet) $('localMessage').textContent = '받는 중…';
   try {
     const index = await (await fetch('./local/index.json', {cache: 'no-store'})).json();
-    const entry = index.districts.find(d => d.province === region.province && d.district === region.district);
-    if (!entry) { $('localMessage').textContent = '이 지역 자료가 없습니다.'; return; }
+    const entries = localEntries(index.districts, region);
+    if (!entries.length) { $('localMessage').textContent = '이 지역 자료가 없습니다.'; return; }
+    const code = entries.map(e => e.code).join('+');
+    const name = entries.length === 1 && entries[0].district ? entries[0].district : region.district;
     const meta = localMeta();
-    if (meta?.code === entry.code && meta.version === index.version && localData) {
+    if (meta?.code === code && meta.version === index.version && localData) {
       if (!!meta.auto !== auto) { store.set(KEYS.local, JSON.stringify({...meta, auto})); localValues(); }
       if (!quiet) $('localMessage').textContent = '최신 자료입니다.';
       return;
     }
-    const response = await fetch(`./local/${entry.code}.tsv.gz`, {cache: 'no-store'});
-    if (!response.ok) throw new Error(String(response.status));
-    const bytes = new Uint8Array(await response.clone().arrayBuffer());
-    const data = parseLocal(await gunzipText(bytes));
+    const responses = [], texts = [];
+    for (const e of entries) {
+      const response = await fetch(`./local/${e.code}.tsv.gz`, {cache: 'no-store'});
+      if (!response.ok) throw new Error(String(response.status));
+      texts.push(await gunzipText(new Uint8Array(await response.clone().arrayBuffer())));
+      responses.push([e.code, response]);
+    }
+    const data = parseLocal(mergeLocal(texts));
     if (!data) throw new Error('format');
     const cache = await caches.open(LOCAL_CACHE);
     for (const key of await cache.keys()) await cache.delete(key);
-    await cache.put(`./local/${entry.code}.tsv.gz`, response);
-    store.set(KEYS.local, JSON.stringify({code: entry.code, version: index.version, province: entry.province, district: entry.district, auto}));
+    for (const [c, response] of responses) await cache.put(`./local/${c}.tsv.gz`, response);
+    store.set(KEYS.local, JSON.stringify({code, version: index.version, province: region.province, district: name, auto}));
     localData = data;
-    $('localMessage').textContent = `${entry.district} 자료를 받았습니다. 이 지역 주소는 인터넷 없이 변환됩니다.`;
+    $('localMessage').textContent = `${name} 자료를 받았습니다. 이 지역 주소는 인터넷 없이 변환됩니다.`;
   } catch { $('localMessage').textContent = '받지 못했습니다. 잠시 뒤 다시 눌러 주세요.'; }
   localValues();
 }
