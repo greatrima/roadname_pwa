@@ -10,11 +10,12 @@ import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCo
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.6.6';
+const APP_VERSION = '1.6.7';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
 - **내 지역 주소 자료**: 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
+- **오프라인 모드**: 설정의 오프라인 모드에서 켜면 주소 서버 없이 받아 둔 내 지역 자료로만 변환합니다. 데이터 받아두기도 이 안으로 옮겼습니다.
 - **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
@@ -26,13 +27,15 @@ const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vwor
   kakao: 'roadname-kakao-key', map: 'roadname-map', engine: 'roadname-engine', continuous: 'roadname-continuous', offline: 'roadname-offline',
   developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
   alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
-  seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts'};
+  seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts',
+  offlineMode: 'roadname-offline-mode'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
 };
 const flag = key => store.get(key) === '1';
-const online = () => navigator.onLine;
+// "오프라인 모드": no address server is asked, only the region's own data (taking that data still works).
+const online = () => navigator.onLine && !flag(KEYS.offlineMode);
 const continuousScan = () => flag(KEYS.continuous);
 const developerMode = () => flag(KEYS.developer);
 function currentRegion() {
@@ -730,6 +733,7 @@ function settingsValues() {
   const region = currentRegion();
   $('regionValue').textContent = (regionName(region) || '설정 안 됨') + (region.localities.length ? ` · ${region.localities.length}곳` : '');
   $('assistValue').textContent = memoryOn() ? '켜짐' : '꺼짐';
+  $('offlineValue').textContent = flag(KEYS.offlineMode) ? '켜짐' : '꺼짐';
   sortingValues();
   $('apiValue').textContent = store.get(KEYS.vworld) || store.get(KEYS.kakao) ? '개인 키' : store.get(KEYS.vworldDefault) ? '기본 키' : '설정 안 됨';
 }
@@ -1103,8 +1107,8 @@ async function downloadLocalData(quiet = false, chosen = null, auto = false) {
   let region = chosen || currentRegion();
   // Without a chosen region the button takes the region found from the converted addresses, if any.
   if (!region.district && !chosen) { try { const found = autoDistrict(JSON.parse(store.get(KEYS.recent) || '[]')); if (found) { region = found; auto = true; } } catch {} }
-  if (!region.province || !region.district) { $('localMessage').textContent = '기본 지역의 시·군·구를 먼저 정해 주세요.'; return; }
-  if (!online()) { $('localMessage').textContent = '인터넷 연결이 필요합니다.'; return; }
+  if (!region.province || !region.district) { askRegion(); return; }
+  if (!navigator.onLine) { $('localMessage').textContent = '인터넷 연결이 필요합니다.'; return; }
   if (!quiet) $('localMessage').textContent = '받는 중…';
   try {
     const index = await (await fetch('./local/index.json', {cache: 'no-store'})).json();
@@ -1130,6 +1134,18 @@ async function downloadLocalData(quiet = false, chosen = null, auto = false) {
   } catch { $('localMessage').textContent = '받지 못했습니다. 잠시 뒤 다시 눌러 주세요.'; }
   localValues();
 }
+/** A region to take the data of: the chosen one, or the one found from the converted addresses. */
+function hasRegion() {
+  if (currentRegion().district || localMeta()?.auto) return true;
+  try { return !!autoDistrict(JSON.parse(store.get(KEYS.recent) || '[]')); } catch { return false; }
+}
+function askRegion() { if (confirm('우선 인식 지역을 먼저 정해 주세요.')) showSettingsPage('region'); }
+$('offlineMode').checked = flag(KEYS.offlineMode);
+$('offlineMode').onchange = () => {
+  if ($('offlineMode').checked && !hasRegion()) { $('offlineMode').checked = false; askRegion(); return; }
+  store.set(KEYS.offlineMode, $('offlineMode').checked ? '1' : '');
+  network();
+};
 $('localDataButton').onclick = () => downloadLocalData();
 void loadLocalData().then(localValues);
 

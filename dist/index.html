@@ -8,7 +8,7 @@
   <title>도로명변환기</title>
   <link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2">
   <link rel="icon" type="image/png" href="./icon-192.png?v=2">
-  <link rel="stylesheet" href="./style.css?v=29">
+  <link rel="stylesheet" href="./style.css?v=30">
 </head>
 <body>
  <main class="app-shell">
@@ -68,9 +68,8 @@
   <label class="toggle" id="alertVibrationRow"><input type="checkbox" id="alertVibration">진동</label>
   <label class="toggle"><input type="checkbox" id="alertSound">소리</label>
   <h3>주소 검색</h3>
-  <div class="setting-list"><button data-open="api">주소 검색 API <span class="row-end"><span class="row-value" id="apiValue"></span><span aria-hidden="true">›</span></span></button><button id="checkDictionary">주소 사전 업데이트 <span class="row-value" id="dictionaryVersion">불러오는 중</span></button><button id="localDataButton">내 지역 주소 자료 <span class="row-value" id="localDataValue"></span></button></div>
+  <div class="setting-list"><button data-open="api">주소 검색 API <span class="row-end"><span class="row-value" id="apiValue"></span><span aria-hidden="true">›</span></span></button><button id="checkDictionary">주소 사전 업데이트 <span class="row-value" id="dictionaryVersion">불러오는 중</span></button><button data-open="offline">오프라인 모드 <span class="row-end"><span class="row-value" id="offlineValue"></span><span aria-hidden="true">›</span></span></button></div>
   <p id="dictionaryMessage" class="cache-message" role="status"></p>
-  <p id="localMessage" class="cache-message" role="status"></p>
   <div class="setting-group"><label for="mapProvider">지도 앱</label><select id="mapProvider"><option value="naver">네이버지도</option><option value="kakao">카카오맵</option></select></div>
   <h3>정보</h3>
   <div class="setting-list"><button data-open="feedback">의견 보내기 <span aria-hidden="true">›</span></button><button id="whatsNewButton">업데이트 내역 <span aria-hidden="true">›</span></button><button id="helpButton">사용 방법 <span aria-hidden="true">›</span></button><button data-open="share">공유 <span aria-hidden="true">›</span></button><button data-open="maker">만든 사람 <span aria-hidden="true">›</span></button></div>
@@ -95,6 +94,11 @@
   <div class="setting-group"><label for="vworldKey">VWorld 검색 API 키</label><input id="vworldKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="설정 안 됨"></div>
   <div class="setting-group"><label for="kakaoKey">카카오 REST API 키</label><input id="kakaoKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="설정 안 됨"></div>
   <button id="saveKeys" class="primary wide">API 키 저장</button><p id="keyMessage" class="cache-message" role="status"></p>
+  </div>
+  <div class="settings-page" data-page="offline" data-title="오프라인 모드" hidden>
+  <label class="toggle"><input type="checkbox" id="offlineMode">오프라인 모드</label>
+  <div class="setting-list"><button id="localDataButton">데이터 받아두기 <span class="row-value" id="localDataValue"></span></button></div>
+  <p id="localMessage" class="cache-message" role="status"></p>
   </div>
   <div class="settings-page" data-page="feedback" data-title="의견 보내기" hidden>
   <textarea id="feedbackText" rows="6" maxlength="1000" aria-label="의견"></textarea>
@@ -147,5 +151,5 @@
  <!-- Anonymous counts (GoatCounter, no cookies): only /app (home-screen) or /web (browser), plus /ok or /fail for a lookup; never addresses or photos. -->
  <script>window.goatcounter={path:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'/app':'/web',title:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'홈 화면 앱':'브라우저'};</script>
  <script data-goatcounter="https://greatrima.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
- <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=29"></script>
+ <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=30"></script>
 </body></html>
