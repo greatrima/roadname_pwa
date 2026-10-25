@@ -10,7 +10,7 @@ import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCo
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.6.8';
+const APP_VERSION = '1.6.9';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
