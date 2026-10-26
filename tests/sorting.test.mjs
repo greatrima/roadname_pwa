@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLabel, describe, locate, overlaps, piece, summary, exportText, importText, PRIORITY, parseRackLabel, describeApartment} from '../dist/sorting.mjs';
+import {parseLabel, describe, locate, overlaps, piece, summary, exportText, importText, PRIORITY, parseRackLabel, describeApartment, apartmentCells, assignApartment} from '../dist/sorting.mjs';
 
 // Invented names only.
 const rack = (labels, extra = {}) => ({name: '내 구역', columns: 6, rows: 6, labels: Object.fromEntries(labels), priority: PRIORITY.ROAD, outside: null, ...extra});
@@ -86,4 +86,12 @@ test('sorting: 아파트 묶기 places a complex by its 동, whichever of its ad
   assert.deepEqual(parseRackLabel('우정1길 1~19', {apartments: [{name: '우정'}]}).apartments, [], 'a name inside a word is left alone');
   const back = importText(exportText({...r, name: '내 구역'}));
   assert.deepEqual(back.rack.apartments, [apartment]);
+});
+
+test('sorting: the apartment table writes the cells\' labels (as in the app)', () => {
+  const labels = {3: '우정아파트 101,102, 우정1길 1~19', 9: '우정아파트 상가', 10: '우정길 1~29'};
+  assert.deepEqual(apartmentCells(labels, '우정아파트'), [['101', 3], ['102', 3], ['상가', 9]]);
+  const written = assignApartment(labels, '우정아파트', [['101', 3], ['103', 4], ['104동', 4], ['상가', 9], ['전체', 5]]);
+  assert.deepEqual(written, {3: '우정1길 1~19, 우정아파트 101', 4: '우정아파트 103,104', 5: '우정아파트', 9: '우정아파트 상가', 10: '우정길 1~29'});
+  assert.deepEqual(assignApartment(labels, '우정아파트', []), {3: '우정1길 1~19', 10: '우정길 1~29'});
 });

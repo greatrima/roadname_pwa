@@ -8,7 +8,7 @@
   <title>도로명변환기</title>
   <link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2">
   <link rel="icon" type="image/png" href="./icon-192.png?v=2">
-  <link rel="stylesheet" href="./style.css?v=34">
+  <link rel="stylesheet" href="./style.css?v=35">
 </head>
 <body>
  <main class="app-shell">
@@ -52,31 +52,62 @@
   </section>
  </main>
  <dialog id="settingsDialog"><div class="dialog-head"><button id="settingsBack" class="iconbutton" aria-label="뒤로" hidden>←</button><h2 class="settings-title"><img id="settingsIcon" src="./jebichan-icon.png" alt="" width="30" height="30"><span id="settingsTitle">설정</span></h2><span id="appVersionBadge" class="version-badge"></span><button id="closeSettings" class="iconbutton" aria-label="설정 닫기">×</button></div>
-  <div class="settings-page" data-page="main">
-  <div class="setting-list"><button id="sortingModeButton">순로구분 모드로 전환</button></div>
-  <div id="sortingSettings" hidden>
+  <div class="settings-page cards" data-page="main">
   <h3>순로구분</h3>
-  <div class="setting-list"><button data-open="racks">구분대 <span class="row-end"><span class="row-value" id="rackValue"></span><span aria-hidden="true">›</span></span></button><button data-open="apartments">아파트 묶기 <span class="row-end"><span class="row-value" id="apartmentsValue"></span><span aria-hidden="true">›</span></span></button></div>
-  <div class="setting-group"><label for="sortingPriority">주소 기준</label><select id="sortingPriority"><option value="ROAD">도로명 우선</option><option value="PARCEL">지번 우선</option></select></div>
-  <div class="setting-group"><label for="sortingOutside">구역 밖 칸</label><input id="sortingOutside" type="text" inputmode="numeric" placeholder="없음"></div>
-  <label class="toggle"><input type="checkbox" id="sortingChangeSound">칸 바뀌면 다른 소리</label>
+  <div class="setting-card">
+  <label class="toggle" data-icon="sort"><input type="checkbox" id="sortingModeToggle">순로구분 모드</label>
+  <button data-open="sorting" data-icon="grid">순로구분 설정 <span class="row-end"><span class="row-value" id="rackValue"></span><span aria-hidden="true">›</span></span></button>
   </div>
   <h3>인식</h3>
-  <div class="setting-list"><button data-open="region">우선 인식 지역 <span class="row-end"><span class="row-value" id="regionValue"></span><span aria-hidden="true">›</span></span></button><button data-open="assist">인식 보조 <span class="row-end"><span class="row-value" id="assistValue"></span><span aria-hidden="true">›</span></span></button><button data-open="buttons">노출 버튼 관리 <span aria-hidden="true">›</span></button></div>
-  <div class="setting-group"><label for="engine">인식 방식</label><select id="engine"><option value="paddle">PaddleOCR · 한국어</option><option value="tesseract">Tesseract · 한국어 + 영어</option><option value="compare">두 방식 비교</option></select></div>
-  <label class="toggle"><input type="checkbox" id="continuousScan">연속 스캔</label>
+  <div class="setting-card">
+  <button data-open="region" data-icon="pin">우선 인식 지역 <span class="row-end"><span class="row-value" id="regionValue"></span><span aria-hidden="true">›</span></span></button>
+  <button data-open="assist" data-icon="assist">인식 보조 <span class="row-end"><span class="row-value" id="assistValue"></span><span aria-hidden="true">›</span></span></button>
+  <button data-open="buttons" data-icon="buttons">노출 버튼 관리 <span aria-hidden="true">›</span></button>
+  <div class="setting-row" data-icon="eye"><label for="engine">인식 방식</label><select id="engine"><option value="paddle">PaddleOCR</option><option value="tesseract">Tesseract</option><option value="compare">두 방식 비교</option></select></div>
+  <label class="toggle" data-icon="scan"><input type="checkbox" id="continuousScan">연속 스캔</label>
+  </div>
   <h3>변환 알림</h3>
-  <label class="toggle" id="alertVibrationRow"><input type="checkbox" id="alertVibration">진동</label>
-  <label class="toggle"><input type="checkbox" id="alertSound">소리</label>
+  <div class="setting-card">
+  <label class="toggle" id="alertVibrationRow" data-icon="vibrate"><input type="checkbox" id="alertVibration">진동</label>
+  <label class="toggle" data-icon="sound"><input type="checkbox" id="alertSound">소리</label>
+  </div>
   <h3>주소 검색</h3>
-  <div class="setting-list"><button data-open="api">주소 검색 API <span class="row-end"><span class="row-value" id="apiValue"></span><span aria-hidden="true">›</span></span></button><button id="checkDictionary">주소 사전 업데이트 <span class="row-value" id="dictionaryVersion">불러오는 중</span></button><button data-open="offline">오프라인 모드 <span class="row-end"><span class="row-value" id="offlineValue"></span><span aria-hidden="true">›</span></span></button></div>
+  <div class="setting-card">
+  <button data-open="api" data-icon="search">주소 검색 API <span class="row-end"><span class="row-value" id="apiValue"></span><span aria-hidden="true">›</span></span></button>
+  <button data-open="offline" data-icon="offline">오프라인 모드 <span class="row-end"><span class="row-value" id="offlineValue"></span><span aria-hidden="true">›</span></span></button>
+  <button id="checkDictionary" data-icon="book">주소 사전 업데이트 <span class="row-value" id="dictionaryVersion">불러오는 중</span></button>
+  <div class="setting-row" data-icon="map"><label for="mapProvider">지도 앱</label><select id="mapProvider"><option value="naver">네이버지도</option><option value="kakao">카카오맵</option></select></div>
+  </div>
   <p id="dictionaryMessage" class="cache-message" role="status"></p>
-  <div class="setting-group"><label for="mapProvider">지도 앱</label><select id="mapProvider"><option value="naver">네이버지도</option><option value="kakao">카카오맵</option></select></div>
   <h3>정보</h3>
-  <div class="setting-list"><button data-open="feedback">의견 보내기 <span aria-hidden="true">›</span></button><button data-open="update">업데이트 <span aria-hidden="true">›</span></button><button data-open="maker">제작자 <span aria-hidden="true">›</span></button><button data-open="share">공유 <span aria-hidden="true">›</span></button></div>
+  <div class="setting-card">
+  <button data-open="feedback" data-icon="chat">의견 보내기 <span aria-hidden="true">›</span></button>
+  <button data-open="update" data-icon="download">업데이트 <span aria-hidden="true">›</span></button>
+  <button data-open="maker" data-icon="person">제작자 <span aria-hidden="true">›</span></button>
+  <button data-open="share" data-icon="share">공유 <span aria-hidden="true">›</span></button>
+  </div>
   <button id="appVersionRow" class="setting-status version-row"><span>앱 버전</span><span id="appVersion"></span></button>
   <div class="setting-status"><span>연결 상태</span><span id="offlineState">온라인</span></div>
   <p id="cacheMessage" class="cache-message" role="status"></p>
+  </div>
+  <div class="settings-page cards" data-page="sorting" data-title="순로구분 설정" hidden>
+  <h3>구분대</h3>
+  <div class="setting-card">
+  <button data-open="racks" data-icon="cell">구분대 <span class="row-end"><span class="row-value" id="rackListValue"></span><span aria-hidden="true">›</span></span></button>
+  <button data-open="apartments" data-icon="building">아파트 사전설정 <span class="row-end"><span class="row-value" id="apartmentsValue"></span><span aria-hidden="true">›</span></span></button>
+  </div>
+  <h3>구분 방식</h3>
+  <div class="setting-card">
+  <div class="setting-row" data-icon="sliders"><label for="sortingPriority">주소 기준</label><select id="sortingPriority"><option value="ROAD">도로명 우선</option><option value="PARCEL">지번 우선</option></select></div>
+  <div class="setting-row" data-icon="outside"><label for="sortingOutside">구역 밖 칸</label><input id="sortingOutside" type="text" inputmode="numeric" placeholder="없음"></div>
+  <label class="toggle" data-icon="sound"><input type="checkbox" id="sortingChangeSound">칸 바뀌면 다른 소리</label>
+  </div>
+  <h3>공유</h3>
+  <div class="setting-card">
+  <button id="exportActiveRack" data-icon="export">구분대 내보내기</button>
+  <button id="openImportFromSorting" data-icon="import">구분대 불러오기 <span aria-hidden="true">›</span></button>
+  </div>
+  <p id="sortingExportMessage" class="cache-message" role="status"></p>
   </div>
   <div class="settings-page" data-page="region" data-title="우선 인식 지역" hidden>
   <div class="setting-group"><label for="regionProvince">시·도</label><select id="regionProvince"><option value="">전체</option></select></div>
@@ -97,7 +128,7 @@
   </div>
   <div class="settings-page" data-page="memoryList" data-title="기억 목록" data-back="assist" hidden><div id="memoryItems" class="item-list"></div></div>
   <div class="settings-page" data-page="recentPage" data-title="최근 주소 목록" data-back="assist" hidden><div id="recentItems" class="item-list"></div></div>
-  <div class="settings-page" data-page="apartments" data-title="아파트 묶기" hidden>
+  <div class="settings-page" data-page="apartments" data-title="아파트 사전설정" data-back="sorting" hidden>
   <div id="apartmentList" class="setting-list"></div>
   <button id="addApartment" class="secondary wide">아파트 추가</button>
   </div>
@@ -105,7 +136,9 @@
   <div class="setting-group"><label for="aptName">이름</label><input id="aptName" type="text" maxlength="30" autocomplete="off" placeholder="우정아파트"></div>
   <div class="setting-group"><label for="aptMain">본주소</label><input id="aptMain" type="text" maxlength="60" autocomplete="off" placeholder="우정7길 12"></div>
   <div class="setting-group"><label for="aptShops">상가 주소 (쉼표로)</label><input id="aptShops" type="text" maxlength="200" autocomplete="off" placeholder="우정대로 45, 소포길 102"></div>
-  <div id="aptCells" class="apt-cells"></div>
+  <h3>동별 칸</h3>
+  <div id="aptTable" class="apt-table"></div>
+  <button id="aptAddUnit" class="secondary wide">+ 동 추가</button>
   <div class="rack-actions"><button id="deleteApartment" class="secondary">삭제</button><button id="saveApartment" class="primary">저장</button></div>
   </div>
   <div class="settings-page" data-page="update" data-title="업데이트" hidden>
@@ -175,5 +208,5 @@
  <!-- Anonymous counts (GoatCounter, no cookies): only /app (home-screen) or /web (browser), plus /ok or /fail for a lookup; never addresses or photos. -->
  <script>window.goatcounter={path:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'/app':'/web',title:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'홈 화면 앱':'브라우저'};</script>
  <script data-goatcounter="https://greatrima.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
- <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=34"></script>
+ <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=35"></script>
 </body></html>

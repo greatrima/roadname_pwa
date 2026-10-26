@@ -151,6 +151,33 @@ export function extractApartments(text, names) {
   return {apartments, rest};
 }
 
+const WHOLE = '전체';
+
+/** The apartment's 동 and their cells as the labels say: [['101', 3], ['상가', 9], ['전체', 5]] (as the app). */
+export function apartmentCells(labels, name) {
+  return Object.entries(labels || {}).sort((a, b) => +a[0] - +b[0]).flatMap(([cell, text]) =>
+    extractApartments(text, [name]).apartments.flatMap(a => a.shops ? [[SHOPS, +cell]] : !a.units.length ? [[WHOLE, +cell]] : a.units.map(u => [u.replace(/동$/, ''), +cell])));
+}
+
+/** `labels` with the apartment's pieces replaced by `cells` ([동 or 상가 or 전체, cell]): the table writes the labels. */
+export function assignApartment(labels, name, cells, count = Infinity) {
+  const out = {};
+  for (const [cell, text] of Object.entries(labels || {})) {
+    const {apartments, rest} = extractApartments(text, [name]);
+    out[cell] = apartments.length ? rest.split(/[,，\n]/).map(s => s.trim()).filter(Boolean).join(', ') : text;
+  }
+  const byCell = new Map();
+  for (const [unit, cell] of cells) if (cell >= 1 && cell <= count) byCell.set(cell, [...(byCell.get(cell) || []), String(unit).trim().replace(/동$/, '')]);
+  for (const [cell, units] of byCell) {
+    const numbers = [...new Set(units.filter(u => /^\d+$/.test(u)))], pieces = [];
+    if (numbers.length) pieces.push(`${name} ${numbers.join(',')}`);
+    if (units.includes(SHOPS)) pieces.push(`${name} ${SHOPS}`);
+    if (units.includes(WHOLE)) pieces.push(name);
+    if (pieces.length) out[cell] = [String(out[cell] || '').trim(), ...pieces].filter(Boolean).join(', ');
+  }
+  return Object.fromEntries(Object.entries(out).filter(([, text]) => String(text).trim()));
+}
+
 export function describeApartment(a) {
   if (a.shops) return `${a.name} 상가`;
   if (!a.units.length) return `${a.name} 전체`;

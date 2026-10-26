@@ -1,5 +1,5 @@
-const CACHE='roadname-beta-assets-v34';
-const SHELL=['./index.html','./style.css?v=34','./app.js?v=34','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./recent-address.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
+const CACHE='roadname-assets-v35';
+const SHELL=['./index.html','./style.css?v=35','./app.js?v=35','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./recent-address.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
 const OPTIONAL=['./apple-touch-icon.png','./icon-192.png','./icon-512.png','./jebichan-icon.png','./share-qr.png','./sanbug-logo.png','./licenses.txt'];
 const same=(a,b)=>new URL(a,self.location).pathname===b;
 self.addEventListener('install',event=>event.waitUntil((async()=>{
@@ -7,7 +7,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
  // Keep large models/runtime from any previous version so an update does not re-download ~30 MB.
  // The address dictionary is not copied: a new deploy may ship a newer one.
  for(const key of await caches.keys()){
-  if(!key.startsWith('roadname-beta-assets-')||key===CACHE)continue;
+  if(!key.startsWith('roadname-assets-')||key===CACHE)continue;
   const old=await caches.open(key);
   for(const request of await old.keys()){const path=new URL(request.url).pathname;if((path.includes('/models/')||path.includes('/vendor/'))&&!path.includes('dictionary')){const response=await old.match(request);if(response)await cache.put(request,response)}}
  }
@@ -16,7 +16,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
  await Promise.all(OPTIONAL.map(async url=>{try{const res=await fetch(new Request(url,{cache:'reload'}));if(res.ok)await cache.put(url,res)}catch{}}));
  self.skipWaiting();
 })()));
-self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key.startsWith('roadname-beta-assets-')&&key!==CACHE)await caches.delete(key);await self.clients.claim()})()));
+self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key.startsWith('roadname-assets-')&&key!==CACHE)await caches.delete(key);await self.clients.claim()})()));
 // App code (HTML/JS/JSON) is network-first so a deploy takes effect on the next launch;
 // offline or on a slow connection (3 s) the cached copy is used. Models/runtime stay cache-first.
 const withTimeout=(promise,ms)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),ms))]);

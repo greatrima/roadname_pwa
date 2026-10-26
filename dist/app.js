@@ -6,22 +6,30 @@ import {
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
 import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from './local-address.mjs';
-import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
+import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
 import {visibleRecent, addRecent} from './recent-address.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '3.0.0-beta2';
+const APP_VERSION = '3.0.0';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **아파트 묶기** (순로구분): 아파트의 본주소와 상가 주소를 묶어 두고, 칸에 "우정아파트 101,102"처럼 적으면 동으로 칸을 찾습니다. 상가 주소에 동·호수를 적은 입주민 우편물도 동으로 찾고, 동이 없는 우편물은 "우정아파트 상가" 칸으로 갑니다.
-- **최근 주소**: 설정 › 인식 보조에서 개수를 정하면, 주소 칸 아래 "최근 주소"를 펼쳐 최근 변환한 주소를 보고 누르면 바로 다시 변환합니다. 펼친 채로 두면 접을 때까지 펼쳐져 있습니다.
-- **기억 목록**: 인식 보조에서 "내 수정 기억"이 기억한 것을 보고 하나씩 지울 수 있습니다.
-- **업데이트 · 제작자 · 공유**: 설정 › 정보를 새로 정리했습니다.
-- **오프라인 데이터**: 우선 인식 지역을 시까지만 골라도 그 시의 구 자료를 모두 받습니다. 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
-- **오프라인 모드**: 설정의 오프라인 모드에서 켜면 주소 서버 없이 받아 둔 내 지역 자료로만 변환합니다. 오프라인 데이터 다운로드도 이 안으로 옮겼습니다.
-- **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
+- **순로구분 모드**: 지정한 구분대의 칸 번호 표시
+- **아파트 사전설정**: 아파트 주소를 묶어 동별로 칸 지정
+- **최근 주소**: 최근 변환한 주소를 다시 변환
+- **기억 목록**: 내 수정 기억 보기·지우기
+- **구분대 내보내기·불러오기**
+
+### 개선점
+- 설정 화면 새 디자인
+- 순로구분 설정 한곳으로 정리
+- 정보 메뉴 정리
+
+### 고친 점
+- 설정에서 돌아오면 맨 위로 가던 문제
+
+순로구분 기능 추가하면서 3.0 올려야했는데 클로드가 말을 안들었어요
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -807,7 +815,7 @@ function renderMemoryList() {
   $('memoryItems').replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement('p'), {className: 'cache-message', textContent: '기억한 것이 없습니다.'})]));
 }
 
-// ---- "아파트 묶기" of the active rack: name, main address, shops' addresses with commas ----
+// ---- "아파트 사전설정" of the active rack: name, main address, shops' addresses with commas, and the 동별 칸 table ----
 let editingApartment = null;
 function renderApartments() {
   const rack = activeRack();
@@ -824,18 +832,34 @@ function renderApartment() {
   $('settingsTitle').textContent = a.name || '아파트 추가';
   $('aptName').value = a.name; $('aptMain').value = a.main || ''; $('aptShops').value = a.shops || '';
   $('deleteApartment').hidden = editingApartment == null;
-  const cells = a.name && rack ? Object.entries(rack.labels || {}).sort((x, y) => +x[0] - +y[0]).flatMap(([cell, text]) => {
-    const found = parseRackLabel(text, {apartments: [a]}).apartments;
-    return found.length ? [`${cell}칸  ${found.map(f => describeApartment(f).slice(a.name.length).trim()).join(', ')}`] : [];
-  }) : [];
-  $('aptCells').textContent = !a.name ? '' : cells.length ? `이 아파트를 쓰는 칸\n${cells.join('\n')}` : `칸에 "${a.name} 101,102"처럼 적으면 이 아파트로 찾습니다.`;
+  // "동별 칸": a 동 ("101", "상가", "전체") and its cell per line; saving writes them into the cells' labels.
+  const cells = a.name && rack ? apartmentCells(rack.labels, a.name) : [];
+  $('aptTable').replaceChildren();
+  for (const [unit, cell] of cells) addUnitLine(unit, cell);
+  for (let i = cells.length ? 1 : 2; i > 0; i--) addUnitLine('', '');
 }
+function addUnitLine(unit, cell) {
+  const line = document.createElement('div'), u = document.createElement('input'), c = document.createElement('input');
+  line.className = 'apt-line';
+  u.placeholder = '동 (101, 상가, 전체)'; u.value = unit; u.setAttribute('aria-label', '동');
+  c.placeholder = '칸'; c.value = cell; c.inputMode = 'numeric'; c.setAttribute('aria-label', '칸');
+  line.append(u, c); $('aptTable').append(line);
+}
+$('aptAddUnit').onclick = () => addUnitLine('', '');
 $('addApartment').onclick = () => { editingApartment = null; showSettingsPage('apartment'); };
 $('saveApartment').onclick = () => {
   const rack = activeRack(), name = $('aptName').value.trim();
   if (!rack || !name) return;
   const apartment = {name, main: $('aptMain').value.trim(), shops: $('aptShops').value.trim()};
-  changeRack(rack.id, r => { r.apartments = r.apartments || []; if (editingApartment != null) r.apartments[editingApartment] = apartment; else r.apartments.push(apartment); });
+  const old = editingApartment != null ? rack.apartments?.[editingApartment] : null;
+  const cells = [...$('aptTable').querySelectorAll('.apt-line')].map(l => [l.children[0].value.trim(), parseInt(l.children[1].value, 10)]).filter(([u, c]) => u && c > 0);
+  changeRack(rack.id, r => {
+    r.apartments = r.apartments || [];
+    if (editingApartment != null) r.apartments[editingApartment] = apartment; else r.apartments.push(apartment);
+    // A renamed complex leaves its old name's pieces behind: they go too.
+    const labels = old && old.name !== name ? assignApartment(r.labels, old.name, []) : r.labels;
+    r.labels = assignApartment(labels, name, cells, cellCount(r));
+  });
   showSorting(); showSettingsPage('apartments');
 };
 $('deleteApartment').onclick = () => {
@@ -1076,19 +1100,32 @@ $('sortingAssign').onclick = () => {
 
 function sortingValues() {
   const state = sortingState(), rack = activeRack(state);
-  $('sortingModeButton').textContent = state.enabled ? '도로명변환기로 전환' : '순로구분 모드로 전환';
-  $('sortingSettings').hidden = !state.enabled;
+  $('sortingModeToggle').checked = state.enabled;
   $('rackValue').textContent = rack ? `${rack.name}${configured(rack) ? ` · ${rack.columns}×${rack.rows}` : ''}` : '설정 안 됨';
+  $('rackListValue').textContent = `${state.racks.length}개`;
   $('sortingPriority').value = rack?.priority || PRIORITY.ROAD;
   $('sortingOutside').value = rack?.outside || '';
   $('sortingChangeSound').checked = state.changeSound;
 }
-$('sortingModeButton').onclick = () => {
+$('sortingModeToggle').onchange = () => {
   const state = sortingState();
-  state.enabled = !state.enabled; saveSorting(state);
+  state.enabled = $('sortingModeToggle').checked; saveSorting(state);
   showSorting();
   // Switched on without a rack: straight to making one.
-  if (state.enabled && !activeRack()) { editingRack = addRack('내 구역').id; showSettingsPage('rack'); } else showSettingsPage('main');
+  if (state.enabled && !activeRack()) { editingRack = addRack('내 구역').id; showSettingsPage('rack'); }
+};
+$('openImportFromSorting').onclick = () => showSettingsPage('import');
+$('exportActiveRack').onclick = async () => {
+  const rack = activeRack();
+  if (!rack) { $('sortingExportMessage').textContent = '구분대가 없습니다.'; return; }
+  const text = exportText(rack);
+  try {
+    if (navigator.share) await navigator.share({title: rack.name, text});
+    else { await navigator.clipboard.writeText(text); $('sortingExportMessage').textContent = '복사했습니다. 메모나 카톡에 붙여 넣어 두세요.'; }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;
+    try { await navigator.clipboard.writeText(text); $('sortingExportMessage').textContent = '복사했습니다.'; } catch { $('sortingExportMessage').textContent = '내보내지 못했습니다.'; }
+  }
 };
 $('sortingPriority').onchange = () => { const rack = activeRack(); if (rack) changeRack(rack.id, r => { r.priority = $('sortingPriority').value; }); };
 $('sortingOutside').onchange = () => {
