@@ -1,7 +1,8 @@
 name: Deploy PWA to GitHub Pages
+# The site is the main branch; while a beta branch exists its app is served next to it at /beta/ (main stays as is).
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,16 +19,33 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: site
+      - id: beta
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: beta
+          path: beta
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Download OCR models and runtime
-        run: pip install pyyaml && python scripts/fetch-assets.py
+        run: pip install pyyaml && python site/scripts/fetch-assets.py
       - name: Address logic tests
+        working-directory: site
         run: node --test tests/*.test.mjs
+      - name: Beta at /beta/
+        if: steps.beta.outcome == 'success'
+        run: |
+          python beta/scripts/fetch-assets.py
+          (cd beta && node --test tests/*.test.mjs)
+          mkdir -p site/dist/beta
+          cp -r beta/dist/. site/dist/beta/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site/dist
       - id: deployment
         uses: actions/deploy-pages@v4
