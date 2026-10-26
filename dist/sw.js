@@ -1,5 +1,5 @@
-const CACHE='roadname-beta-assets-v33';
-const SHELL=['./index.html','./style.css?v=33','./app.js?v=33','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./recent-address.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
+const CACHE='roadname-beta-assets-v34';
+const SHELL=['./index.html','./style.css?v=34','./app.js?v=34','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./recent-address.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
 const OPTIONAL=['./apple-touch-icon.png','./icon-192.png','./icon-512.png','./jebichan-icon.png','./share-qr.png','./sanbug-logo.png','./licenses.txt'];
 const same=(a,b)=>new URL(a,self.location).pathname===b;
 self.addEventListener('install',event=>event.waitUntil((async()=>{

@@ -11,12 +11,12 @@ import {visibleRecent, addRecent} from './recent-address.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '3.0.0-beta1';
+const APP_VERSION = '3.0.0-beta2';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
 - **아파트 묶기** (순로구분): 아파트의 본주소와 상가 주소를 묶어 두고, 칸에 "우정아파트 101,102"처럼 적으면 동으로 칸을 찾습니다. 상가 주소에 동·호수를 적은 입주민 우편물도 동으로 찾고, 동이 없는 우편물은 "우정아파트 상가" 칸으로 갑니다.
-- **최근 주소**: 설정 › 인식 보조에서 개수를 정하면, 주소 칸을 눌렀을 때 최근 변환한 주소가 나오고 누르면 바로 다시 변환합니다.
+- **최근 주소**: 설정 › 인식 보조에서 개수를 정하면, 주소 칸 아래 "최근 주소"를 펼쳐 최근 변환한 주소를 보고 누르면 바로 다시 변환합니다. 펼친 채로 두면 접을 때까지 펼쳐져 있습니다.
 - **기억 목록**: 인식 보조에서 "내 수정 기억"이 기억한 것을 보고 하나씩 지울 수 있습니다.
 - **업데이트 · 제작자 · 공유**: 설정 › 정보를 새로 정리했습니다.
 - **오프라인 데이터**: 우선 인식 지역을 시까지만 골라도 그 시의 구 자료를 모두 받습니다. 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
@@ -34,7 +34,7 @@ const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vwor
   alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
   seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts',
   offlineMode: 'roadname-offline-mode', recentLimit: 'roadname-recent-limit', recentMidnight: 'roadname-recent-midnight',
-  recentAddresses: 'roadname-recent-addresses'};
+  recentAddresses: 'roadname-recent-addresses', recentOpen: 'roadname-recent-open'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -278,6 +278,7 @@ function showSuccess(r) {
   shownResult = r;
   noteDistrict(r);
   saveRecent(addRecent(recentAll(), r, recentLimit(), flag(KEYS.recentMidnight)));
+  showRecent();
   const changed = showSorting(true);
   signal(true, changed && sortingState().changeSound);
 }
@@ -722,7 +723,7 @@ for (const type of ['pointerup', 'pointercancel', 'pointerleave']) $('candidateL
 let focusValue = '';
 $('addressInput').addEventListener('focus', () => { editing = true; focusValue = $('addressInput').value; showRecent(); });
 // Tapping into the field and leaving it unchanged must not keep live scanning paused.
-$('addressInput').addEventListener('blur', () => { if ($('addressInput').value === focusValue) editing = false; $('recentList').hidden = true; });
+$('addressInput').addEventListener('blur', () => { if ($('addressInput').value === focusValue) editing = false; });
 $('addressInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('addressInput').blur(); submitManualAddress(); } });
 $('addressInput').oninput = () => {
   // Editing cancels pending lookups; an old response must not replace the edited address.
@@ -736,20 +737,46 @@ const recentLimit = () => Math.max(0, parseInt(store.get(KEYS.recentLimit), 10) 
 function recentAll() { try { return JSON.parse(store.get(KEYS.recentAddresses) || '[]'); } catch { return []; } }
 const saveRecent = list => store.set(KEYS.recentAddresses, list.length ? JSON.stringify(list) : '');
 const recentEntries = () => visibleRecent(recentAll(), recentLimit(), flag(KEYS.recentMidnight));
+const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+/** "→ 우정안길 28": the result without its 시·도 and 시·군·구. */
+function shortResult(converted) {
+  const parts = parseParts(converted);
+  const short = parts ? [parts.name, parts.number].filter(v => v != null && v !== '').join(' ') : '';
+  return short || converted || '';
+}
+/** "08:42" today, "어제", else "10/24". */
+function recentTime(at) {
+  const then = new Date(at), now = new Date(), yesterday = new Date(now - 864e5);
+  if (then.toDateString() === now.toDateString()) return `${String(then.getHours()).padStart(2, '0')}:${String(then.getMinutes()).padStart(2, '0')}`;
+  if (then.toDateString() === yesterday.toDateString()) return '어제';
+  return `${then.getMonth() + 1}/${then.getDate()}`;
+}
 function recentRow(e, onPick) {
-  const row = document.createElement('button');
+  const row = document.createElement('button'), text = document.createElement('span'), sub = document.createElement('small');
   row.type = 'button'; row.className = 'recent-item';
-  row.append(e.recognized);
-  if (e.converted && e.converted !== e.recognized) row.append(Object.assign(document.createElement('small'), {textContent: e.converted}));
-  if (onPick) row.addEventListener('pointerdown', ev => { ev.preventDefault(); onPick(e); });
+  row.insertAdjacentHTML('afterbegin', CLOCK);
+  text.append(e.recognized);
+  sub.textContent = [e.converted && e.converted !== e.recognized ? `→ ${shortResult(e.converted)}` : '', recentTime(e.at)].filter(Boolean).join('   ');
+  text.append(sub); row.append(text);
+  if (onPick) row.onclick = () => onPick(e);
   return row;
 }
+/**
+ * Always there while it has addresses (not only while typing): a grey box whose header ("최근 주소 3" ▾/▴) folds
+ * and opens the rows; the choice stays until changed, so the history reads as history and does not pop away.
+ */
 function showRecent() {
-  const list = $('recentList'), entries = document.activeElement === $('addressInput') && !$('addressInput').value.trim() ? recentEntries() : [];
-  list.replaceChildren(...entries.map(e => recentRow(e, pick => {
-    list.hidden = true; $('addressInput').value = pick.recognized; $('addressInput').blur();
+  const list = $('recentList'), entries = recentEntries(), open = flag(KEYS.recentOpen);
+  const header = document.createElement('button');
+  header.type = 'button'; header.className = 'recent-header';
+  header.setAttribute('aria-expanded', String(open));
+  header.insertAdjacentHTML('afterbegin', CLOCK);
+  header.append(`최근 주소 ${entries.length}`, Object.assign(document.createElement('span'), {className: 'recent-fold', textContent: open ? '▴' : '▾'}));
+  header.onclick = () => { store.set(KEYS.recentOpen, open ? '' : '1'); showRecent(); };
+  list.replaceChildren(header, ...(open ? entries.map(e => recentRow(e, pick => {
+    $('addressInput').value = pick.recognized; $('addressInput').blur();
     $('copyAddress').disabled = false; submitManualAddress();
-  })));
+  })) : []));
   list.hidden = !entries.length;
 }
 function renderRecentPage() {
@@ -760,10 +787,10 @@ $('recentLimit').onchange = () => {
   const limit = Math.min(999, Math.max(0, parseInt($('recentLimit').value, 10) || 0));
   store.set(KEYS.recentLimit, limit ? String(limit) : '');
   saveRecent(recentAll().slice(0, limit));
-  settingsValues();
+  settingsValues(); showRecent();
 };
 $('recentMidnight').onchange = () => store.set(KEYS.recentMidnight, $('recentMidnight').checked ? '1' : '');
-$('clearRecent').onclick = () => { saveRecent([]); $('recentMessage').textContent = '최근 주소를 지웠습니다.'; settingsValues(); };
+$('clearRecent').onclick = () => { saveRecent([]); $('recentMessage').textContent = '최근 주소를 지웠습니다.'; settingsValues(); showRecent(); };
 
 /** "기억 목록": corrections ("우저4긱 → 우정4길") and names, newest first; × forgets one. */
 function renderMemoryList() {
@@ -1409,3 +1436,4 @@ if (document.modelContext?.registerTool) {
     return {busy, address: $('addressInput').value, converted: mapAddress, results: [...$('results').querySelectorAll('article')].map(e => ({engine: e.querySelector('h2').textContent, text: e.querySelector('textarea').value}))};
   }}, {signal: lifecycle.signal})).catch(() => {});
 }
+showRecent();
