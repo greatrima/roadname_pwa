@@ -1,8 +1,9 @@
 name: Deploy PWA to GitHub Pages
 # The site is the main branch; while a beta branch exists its app is served next to it at /beta/ (main stays as is).
+# Only main may deploy (the github-pages environment): after pushing beta, run this workflow on main.
 on:
   push:
-    branches: [main, beta]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
