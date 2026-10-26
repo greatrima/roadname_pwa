@@ -6,17 +6,30 @@ import {
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
 import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from './local-address.mjs';
-import {parseLabel, describe as describeEntry, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
+import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
+import {visibleRecent, addRecent} from './recent-address.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '1.6.9';
+const APP_VERSION = '3.0.0';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
-- **오프라인 데이터**: 우선 인식 지역을 시까지만 골라도 그 시의 구 자료를 모두 받습니다. 기본 지역을 정하지 않아도 변환한 주소로 내 지역을 알아내 저절로 받습니다. 그 지역(시·군·구)의 주소는 인터넷 없이 바로 변환되고 순로구분 칸도 바로 나옵니다. 건물 이름(아파트·빌딩명)만으로도 찾고, 카메라가 길 이름·동 이름을 잘못 읽어도(다슬로 → 다솔로) 그 지역 이름으로 바로잡습니다.
-- **오프라인 모드**: 설정의 오프라인 모드에서 켜면 주소 서버 없이 받아 둔 내 지역 자료로만 변환합니다. 오프라인 데이터 다운로드도 이 안으로 옮겼습니다.
-- **순로구분 모드**: 설정 맨 위에서 켜면, 변환한 주소가 구분대 몇 번 칸인지 크게 보여 줍니다.
+- **순로구분 모드**: 지정한 구분대의 칸 번호 표시
+- **아파트 사전설정**: 아파트 주소를 묶어 동별로 칸 지정
+- **최근 주소**: 최근 변환한 주소를 다시 변환
+- **기억 목록**: 내 수정 기억 보기·지우기
+- **구분대 내보내기·불러오기**
+
+### 개선점
+- 설정 화면 새 디자인
+- 순로구분 설정 한곳으로 정리
+- 정보 메뉴 정리
+
+### 고친 점
+- 설정에서 돌아오면 맨 위로 가던 문제
+
+순로구분 기능 추가하면서 3.0 올려야했는데 클로드가 말을 안들었어요
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -28,7 +41,8 @@ const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vwor
   developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
   alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
   seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts',
-  offlineMode: 'roadname-offline-mode'};
+  offlineMode: 'roadname-offline-mode', recentLimit: 'roadname-recent-limit', recentMidnight: 'roadname-recent-midnight',
+  recentAddresses: 'roadname-recent-addresses', recentOpen: 'roadname-recent-open'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -271,6 +285,8 @@ function showSuccess(r) {
   setStatus(`${SOURCE_LABEL[r.source]}에서 확인된 주소입니다.`);
   shownResult = r;
   noteDistrict(r);
+  saveRecent(addRecent(recentAll(), r, recentLimit(), flag(KEYS.recentMidnight)));
+  showRecent();
   const changed = showSorting(true);
   signal(true, changed && sortingState().changeSound);
 }
@@ -713,7 +729,7 @@ $('convertButton').onclick = () => { $('addressInput').blur(); submitManualAddre
 $('candidateList').addEventListener('pointerdown', () => { candidateTouch = true; });
 for (const type of ['pointerup', 'pointercancel', 'pointerleave']) $('candidateList').addEventListener(type, () => setTimeout(() => { candidateTouch = false; }, 0));
 let focusValue = '';
-$('addressInput').addEventListener('focus', () => { editing = true; focusValue = $('addressInput').value; });
+$('addressInput').addEventListener('focus', () => { editing = true; focusValue = $('addressInput').value; showRecent(); });
 // Tapping into the field and leaving it unchanged must not keep live scanning paused.
 $('addressInput').addEventListener('blur', () => { if ($('addressInput').value === focusValue) editing = false; });
 $('addressInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('addressInput').blur(); submitManualAddress(); } });
@@ -721,7 +737,151 @@ $('addressInput').oninput = () => {
   // Editing cancels pending lookups; an old response must not replace the edited address.
   editing = true; requestSeq++; setConverting(false); awaitingNetwork = false; showDetails(''); resetResult(); setStatus(''); diag.finish('편집 중 · 검색 취소', '');
   $('copyAddress').disabled = !$('addressInput').value.trim();
+  showRecent();
 };
+
+// ---- "최근 주소": under the empty, focused input, newest first; a tap converts it again ----
+const recentLimit = () => Math.max(0, parseInt(store.get(KEYS.recentLimit), 10) || 0);
+function recentAll() { try { return JSON.parse(store.get(KEYS.recentAddresses) || '[]'); } catch { return []; } }
+const saveRecent = list => store.set(KEYS.recentAddresses, list.length ? JSON.stringify(list) : '');
+const recentEntries = () => visibleRecent(recentAll(), recentLimit(), flag(KEYS.recentMidnight));
+const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+/** "→ 우정안길 28": the result without its 시·도 and 시·군·구. */
+function shortResult(converted) {
+  const parts = parseParts(converted);
+  const short = parts ? [parts.name, parts.number].filter(v => v != null && v !== '').join(' ') : '';
+  return short || converted || '';
+}
+/** "08:42" today, "어제", else "10/24". */
+function recentTime(at) {
+  const then = new Date(at), now = new Date(), yesterday = new Date(now - 864e5);
+  if (then.toDateString() === now.toDateString()) return `${String(then.getHours()).padStart(2, '0')}:${String(then.getMinutes()).padStart(2, '0')}`;
+  if (then.toDateString() === yesterday.toDateString()) return '어제';
+  return `${then.getMonth() + 1}/${then.getDate()}`;
+}
+function recentRow(e, onPick) {
+  const row = document.createElement('button'), text = document.createElement('span'), sub = document.createElement('small');
+  row.type = 'button'; row.className = 'recent-item';
+  row.insertAdjacentHTML('afterbegin', CLOCK);
+  text.append(e.recognized);
+  sub.textContent = [e.converted && e.converted !== e.recognized ? `→ ${shortResult(e.converted)}` : '', recentTime(e.at)].filter(Boolean).join('   ');
+  text.append(sub); row.append(text);
+  if (onPick) row.onclick = () => onPick(e);
+  return row;
+}
+/**
+ * Always there while it has addresses (not only while typing): a grey box whose header ("최근 주소 3" ▾/▴) folds
+ * and opens the rows; the choice stays until changed, so the history reads as history and does not pop away.
+ */
+function showRecent() {
+  const list = $('recentList'), entries = recentEntries(), open = flag(KEYS.recentOpen);
+  const header = document.createElement('button');
+  header.type = 'button'; header.className = 'recent-header';
+  header.setAttribute('aria-expanded', String(open));
+  header.insertAdjacentHTML('afterbegin', CLOCK);
+  header.append(`최근 주소 ${entries.length}`, Object.assign(document.createElement('span'), {className: 'recent-fold', textContent: open ? '▴' : '▾'}));
+  header.onclick = () => { store.set(KEYS.recentOpen, open ? '' : '1'); showRecent(); };
+  list.replaceChildren(header, ...(open ? entries.map(e => recentRow(e, pick => {
+    $('addressInput').value = pick.recognized; $('addressInput').blur();
+    $('copyAddress').disabled = false; submitManualAddress();
+  })) : []));
+  list.hidden = !entries.length;
+}
+function renderRecentPage() {
+  const entries = recentEntries();
+  $('recentItems').replaceChildren(...(entries.length ? entries.map(e => recentRow(e, null)) : [Object.assign(document.createElement('p'), {className: 'cache-message', textContent: '최근 주소가 없습니다.'})]));
+}
+$('recentLimit').onchange = () => {
+  const limit = Math.min(999, Math.max(0, parseInt($('recentLimit').value, 10) || 0));
+  store.set(KEYS.recentLimit, limit ? String(limit) : '');
+  saveRecent(recentAll().slice(0, limit));
+  settingsValues(); showRecent();
+};
+$('recentMidnight').onchange = () => store.set(KEYS.recentMidnight, $('recentMidnight').checked ? '1' : '');
+$('clearRecent').onclick = () => { saveRecent([]); $('recentMessage').textContent = '최근 주소를 지웠습니다.'; settingsValues(); showRecent(); };
+
+/** "기억 목록": corrections ("우저4긱 → 우정4길") and names, newest first; × forgets one. */
+function renderMemoryList() {
+  const item = (text, forget) => {
+    const row = document.createElement('div'), remove = document.createElement('button');
+    row.className = 'memory-item'; row.append(Object.assign(document.createElement('span'), {textContent: text}));
+    remove.className = 'secondary'; remove.textContent = '삭제'; remove.setAttribute('aria-label', `${text} 삭제`);
+    remove.onclick = () => { forget(); store.set(KEYS.memory, memory.serialize()); renderMemoryList(); settingsValues(); };
+    row.append(remove);
+    return row;
+  };
+  const rows = [...[...memory.pairs].reverse().map(([misread, corrected]) => item(`${misread} → ${corrected}`, () => memory.pairs.delete(misread))),
+    ...[...memory.names.keys()].reverse().map(name => item(name, () => memory.names.delete(name)))];
+  $('memoryItems').replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement('p'), {className: 'cache-message', textContent: '기억한 것이 없습니다.'})]));
+}
+
+// ---- "아파트 사전설정" of the active rack: name, main address, shops' addresses with commas, and the 동별 칸 table ----
+let editingApartment = null;
+function renderApartments() {
+  const rack = activeRack();
+  $('apartmentList').replaceChildren(...(rack?.apartments || []).map((a, i) => {
+    const row = document.createElement('button');
+    row.append(a.name, Object.assign(document.createElement('span'), {className: 'row-end', textContent: apartmentAddresses(a)[0] || ''}));
+    row.onclick = () => { editingApartment = i; showSettingsPage('apartment'); };
+    return row;
+  }));
+  $('addApartment').disabled = !rack;
+}
+function renderApartment() {
+  const rack = activeRack(), a = rack?.apartments?.[editingApartment] || {name: '', main: '', shops: ''};
+  $('settingsTitle').textContent = a.name || '아파트 추가';
+  $('aptName').value = a.name; $('aptMain').value = a.main || ''; $('aptShops').value = a.shops || '';
+  $('deleteApartment').hidden = editingApartment == null;
+  // "동별 칸": a 동 ("101", "상가", "전체") and its cell per line; saving writes them into the cells' labels.
+  const cells = a.name && rack ? apartmentCells(rack.labels, a.name) : [];
+  $('aptTable').replaceChildren();
+  for (const [unit, cell] of cells) addUnitLine(unit, cell);
+  for (let i = cells.length ? 1 : 2; i > 0; i--) addUnitLine('', '');
+}
+function addUnitLine(unit, cell) {
+  const line = document.createElement('div'), u = document.createElement('input'), c = document.createElement('input');
+  line.className = 'apt-line';
+  u.placeholder = '동 (101, 상가, 전체)'; u.value = unit; u.setAttribute('aria-label', '동');
+  c.placeholder = '칸'; c.value = cell; c.inputMode = 'numeric'; c.setAttribute('aria-label', '칸');
+  line.append(u, c); $('aptTable').append(line);
+}
+$('aptAddUnit').onclick = () => addUnitLine('', '');
+$('addApartment').onclick = () => { editingApartment = null; showSettingsPage('apartment'); };
+$('saveApartment').onclick = () => {
+  const rack = activeRack(), name = $('aptName').value.trim();
+  if (!rack || !name) return;
+  const apartment = {name, main: $('aptMain').value.trim(), shops: $('aptShops').value.trim()};
+  const old = editingApartment != null ? rack.apartments?.[editingApartment] : null;
+  const cells = [...$('aptTable').querySelectorAll('.apt-line')].map(l => [l.children[0].value.trim(), parseInt(l.children[1].value, 10)]).filter(([u, c]) => u && c > 0);
+  changeRack(rack.id, r => {
+    r.apartments = r.apartments || [];
+    if (editingApartment != null) r.apartments[editingApartment] = apartment; else r.apartments.push(apartment);
+    // A renamed complex leaves its old name's pieces behind: they go too.
+    const labels = old && old.name !== name ? assignApartment(r.labels, old.name, []) : r.labels;
+    r.labels = assignApartment(labels, name, cells, cellCount(r));
+  });
+  showSorting(); showSettingsPage('apartments');
+};
+$('deleteApartment').onclick = () => {
+  const rack = activeRack();
+  if (!rack || editingApartment == null) return;
+  changeRack(rack.id, r => { r.apartments.splice(editingApartment, 1); });
+  showSorting(); showSettingsPage('apartments');
+};
+
+// ---- "업데이트": this web version, the newest Android app on GitHub and its download, the notes ----
+let latestChecked = false;
+async function checkLatestApp() {
+  $('webVersion').textContent = APP_VERSION;
+  if (latestChecked) return;
+  try {
+    const release = await (await fetch('https://api.github.com/repos/greatrima/roadnameconverter/releases/latest', {cache: 'no-store'})).json();
+    const apk = (release.assets || []).find(a => a.name.endsWith('.apk'));
+    $('latestAppVersion').textContent = release.tag_name || '확인 못 함';
+    if (apk) $('downloadLatest').href = apk.browser_download_url;
+    latestChecked = true;
+  } catch { $('latestAppVersion').textContent = '확인 못 함'; }
+}
 $('copyAddress').onclick = () => copyText($('addressInput').value, '인식한 주소를 복사했습니다.');
 $('copyResult').onclick = () => { if (mapAddress) { void copyText(mapAddress, '변환 주소를 복사했습니다.'); confirmUse(); } };
 // The whole result is the copy target: easier than the small icon with one hand.
@@ -734,11 +894,21 @@ function settingsValues() {
   $('regionValue').textContent = (regionName(region) || '설정 안 됨') + (region.localities.length ? ` · ${region.localities.length}곳` : '');
   $('assistValue').textContent = memoryOn() ? '켜짐' : '꺼짐';
   $('offlineValue').textContent = flag(KEYS.offlineMode) ? '켜짐' : '꺼짐';
+  $('memoryCount').textContent = `${memory.pairs.size + memory.names.size}개`;
+  $('recentLimit').value = recentLimit() || '';
+  $('recentMidnight').checked = flag(KEYS.recentMidnight);
+  $('recentCount').textContent = `${recentEntries().length}개`;
+  $('apartmentsValue').textContent = `${(activeRack()?.apartments || []).length}곳`;
   sortingValues();
   $('apiValue').textContent = store.get(KEYS.vworld) || store.get(KEYS.kakao) ? '개인 키' : store.get(KEYS.vworldDefault) ? '기본 키' : '설정 안 됨';
 }
+let mainScroll = 0;
 function showSettingsPage(name) {
   const pages = [...document.querySelectorAll('#settingsDialog .settings-page')], page = pages.find(p => p.dataset.page === name) || pages[0];
+  // Back to the list returns where it was; a page opened from it starts at the top.
+  const from = settingsPage, to = page.dataset.page;
+  if (from === 'main' && to !== 'main') mainScroll = $('settingsDialog').scrollTop;
+  const scroll = to === from ? $('settingsDialog').scrollTop : to === 'main' ? mainScroll : 0;
   for (const p of pages) p.hidden = p !== page;
   settingsPage = page.dataset.page;
   const main = settingsPage === 'main';
@@ -750,8 +920,13 @@ function showSettingsPage(name) {
   if (settingsPage === 'rack') renderRack(true);
   if (settingsPage === 'assign') renderAssign();
   if (settingsPage === 'import') { $('importText').value = ''; $('importMessage').textContent = ''; }
+  if (settingsPage === 'memoryList') renderMemoryList();
+  if (settingsPage === 'recentPage') renderRecentPage();
+  if (settingsPage === 'apartments') renderApartments();
+  if (settingsPage === 'apartment') renderApartment();
+  if (settingsPage === 'update') checkLatestApp();
   settingsValues();
-  $('settingsDialog').scrollTop = 0;
+  $('settingsDialog').scrollTop = scroll;
 }
 function openSettings(page = 'main') {
   $('vworldKey').value = store.get(KEYS.vworld); $('kakaoKey').value = store.get(KEYS.kakao); $('keyMessage').textContent = ''; $('dictionaryMessage').textContent = '';
@@ -775,7 +950,18 @@ $('saveKeys').onclick = () => {
 $('mapProvider').onchange = () => store.set(KEYS.map, $('mapProvider').value);
 $('engine').value = store.get(KEYS.engine) || 'paddle'; $('engine').onchange = () => { store.set(KEYS.engine, $('engine').value); updateScanUi(); };
 bindToggle('continuousScan', KEYS.continuous, () => { if (liveCamera() && !scanning && !selected) startScanning(); updateScanUi(); });
-bindToggle('developerMode', KEYS.developer, () => diag.render());
+// The developer mode lasts one run (off at every launch); three quick taps on the version switch it.
+store.set(KEYS.developer, '');
+let versionTaps = [];
+$('appVersionRow').onclick = () => {
+  const now = Date.now();
+  versionTaps = [...versionTaps.filter(t => now - t < 1500), now];
+  if (versionTaps.length < 3) return;
+  versionTaps = [];
+  store.set(KEYS.developer, developerMode() ? '' : '1');
+  $('cacheMessage').textContent = developerMode() ? '개발자 모드를 켰습니다.' : '개발자 모드를 껐습니다.';
+  diag.render();
+};
 // Both alerts are on until switched off; a browser that cannot vibrate (iPhone) shows only the sound switch.
 for (const [id, key] of [['alertVibration', KEYS.alertVibrationOff], ['alertSound', KEYS.alertSoundOff]]) {
   $(id).checked = !flag(key);
@@ -888,6 +1074,7 @@ function showSorting(fresh = false) {
   if (verdict.cell) {
     tone = cellTone(verdict.cell);
     cell.replaceChildren(...cellText(verdict.cell, verdict.outside ? ' 구역 밖' : ''));
+    if (verdict.apartment) cell.append(Object.assign(document.createElement('span'), {className: 'cell-apartment', textContent: [verdict.apartment, verdict.unit].filter(Boolean).join(' ')}));
     cell.setAttribute('aria-label', `${verdict.cell}번 칸${verdict.outside ? ' (구역 밖)' : ''}`);
   } else {
     tone = {notMine: 'not-mine', unassigned: 'unassigned'}[verdict.state] || 'setup';
@@ -913,19 +1100,32 @@ $('sortingAssign').onclick = () => {
 
 function sortingValues() {
   const state = sortingState(), rack = activeRack(state);
-  $('sortingModeButton').textContent = state.enabled ? '도로명변환기로 전환' : '순로구분 모드로 전환';
-  $('sortingSettings').hidden = !state.enabled;
+  $('sortingModeToggle').checked = state.enabled;
   $('rackValue').textContent = rack ? `${rack.name}${configured(rack) ? ` · ${rack.columns}×${rack.rows}` : ''}` : '설정 안 됨';
+  $('rackListValue').textContent = `${state.racks.length}개`;
   $('sortingPriority').value = rack?.priority || PRIORITY.ROAD;
   $('sortingOutside').value = rack?.outside || '';
   $('sortingChangeSound').checked = state.changeSound;
 }
-$('sortingModeButton').onclick = () => {
+$('sortingModeToggle').onchange = () => {
   const state = sortingState();
-  state.enabled = !state.enabled; saveSorting(state);
+  state.enabled = $('sortingModeToggle').checked; saveSorting(state);
   showSorting();
   // Switched on without a rack: straight to making one.
-  if (state.enabled && !activeRack()) { editingRack = addRack('내 구역').id; showSettingsPage('rack'); } else showSettingsPage('main');
+  if (state.enabled && !activeRack()) { editingRack = addRack('내 구역').id; showSettingsPage('rack'); }
+};
+$('openImportFromSorting').onclick = () => showSettingsPage('import');
+$('exportActiveRack').onclick = async () => {
+  const rack = activeRack();
+  if (!rack) { $('sortingExportMessage').textContent = '구분대가 없습니다.'; return; }
+  const text = exportText(rack);
+  try {
+    if (navigator.share) await navigator.share({title: rack.name, text});
+    else { await navigator.clipboard.writeText(text); $('sortingExportMessage').textContent = '복사했습니다. 메모나 카톡에 붙여 넣어 두세요.'; }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;
+    try { await navigator.clipboard.writeText(text); $('sortingExportMessage').textContent = '복사했습니다.'; } catch { $('sortingExportMessage').textContent = '내보내지 못했습니다.'; }
+  }
 };
 $('sortingPriority').onchange = () => { const rack = activeRack(); if (rack) changeRack(rack.id, r => { r.priority = $('sortingPriority').value; }); };
 $('sortingOutside').onchange = () => {
@@ -996,8 +1196,9 @@ function renderGrid(grid, rack, chosen, choose) {
   }));
 }
 function renderChips() {
-  const {entries, problems} = parseLabel($('cellLabel').value);
-  $('cellChips').replaceChildren(...entries.map(e => Object.assign(document.createElement('span'), {textContent: describeEntry(e)})),
+  const {entries, problems, apartments} = parseRackLabel($('cellLabel').value, rackInEdit());
+  $('cellChips').replaceChildren(...apartments.map(a => Object.assign(document.createElement('span'), {textContent: describeApartment(a)})),
+    ...entries.map(e => Object.assign(document.createElement('span'), {textContent: describeEntry(e)})),
     ...problems.map(p => Object.assign(document.createElement('span'), {className: 'problem', textContent: `읽지 못함 · ${p}`})));
 }
 /** Saves the chosen cell's addresses; the same address written just as narrowly in another cell is told. */
@@ -1186,7 +1387,6 @@ if (window.visualViewport) {
   document.addEventListener('focusin', () => setTimeout(fit, 300));
   document.addEventListener('focusout', () => setTimeout(fit, 300));
 }
-$('helpButton').onclick = () => { $('settingsDialog').close(); $('help').showModal(); }; $('closeHelp').onclick = () => $('help').close();
 // iPhone Safari has no install prompt: show a one-line hint until closed; never inside the home-screen app.
 {
   const ios = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -1273,3 +1473,4 @@ if (document.modelContext?.registerTool) {
     return {busy, address: $('addressInput').value, converted: mapAddress, results: [...$('results').querySelectorAll('article')].map(e => ({engine: e.querySelector('h2').textContent, text: e.querySelector('textarea').value}))};
   }}, {signal: lifecycle.signal})).catch(() => {});
 }
+showRecent();
