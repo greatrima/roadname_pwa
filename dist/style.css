@@ -218,3 +218,22 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .maker img{display:block;width:180px;height:180px;margin:0 auto 20px}
 :root.keyboard .app-shell{height:var(--visible-height)}
 :root.keyboard dialog{max-height:calc(var(--visible-height) - 16px);margin-top:calc(var(--visible-top) + 8px);margin-bottom:auto}
+/* 3.0.0: recent addresses, memory list, apartments, maker and share pages */
+.recent-list{margin-top:6px;border:1px solid #dce1e8;border-radius:12px;overflow:hidden;background:white}
+.recent-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;min-height:48px;padding:10px 14px;background:white;border:0;border-bottom:1px solid #edf0f4;border-radius:0;text-align:left;font-size:15px;font-weight:500;color:var(--ink,#17202b)}
+.recent-item:last-child{border-bottom:0}
+.recent-item small{font-size:13px;color:var(--muted)}
+.item-list .recent-item{border:1px solid #edf0f4;border-radius:10px;margin-top:8px}
+.memory-item{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:52px;border-bottom:1px solid #edf0f4}
+.memory-item button{min-height:40px;padding:0 14px}
+.apt-cells{white-space:pre-line;font-size:14px;line-height:1.7;color:#536178;background:#E8EEF8;border-radius:12px;padding:12px 14px;margin-top:14px}
+.apt-cells:empty{display:none}
+.cell-apartment{display:inline-block;margin-left:12px;padding:4px 12px;border-radius:999px;background:white;font-size:15px;font-weight:700;vertical-align:middle}
+.version-row{width:100%;background:none;border:0;padding:0;font:inherit}
+.text-link{color:#23407A;text-decoration:underline;font-weight:600}
+.maker p{margin:8px 0;font-size:15px}
+.maker .maker-name{font-weight:700;font-size:16px}
+.maker .maker-motto{color:var(--muted);margin:16px 0 20px}
+.maker-licenses{display:block;margin-top:24px;font-size:13px;color:var(--muted)}
+.share{text-align:center}
+.share .text-link{display:inline-block;margin-top:12px;font-size:15px}

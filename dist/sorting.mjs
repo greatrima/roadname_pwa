@@ -130,13 +130,62 @@ const labelled = rack => Object.entries(rack.labels || {}).filter(([cell, text])
  * The cell for the converted address in both forms; `source` is the text read from the mail, for a building unit
  * ("104동") the address itself does not carry. {cell, outside} | {state: 'notMine' | 'unassigned' | 'notConfigured'}.
  */
+// ---- "아파트 묶기": a complex with its main and shops' addresses; labels name it with its 동 ("우정아파트 101,102") ----
+const SHOPS = '상가';
+const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const apartmentAddresses = a => [a.main, ...String(a.shops || '').split(/[,，]/)].map(s => String(s || '').trim()).filter(Boolean);
+
+/** {apartments, rest}: the apartment pieces of a label and the label without them (as the app's SortingApartments). */
+export function extractApartments(text, names) {
+  const apartments = [];
+  let rest = String(text || '');
+  for (const name of [...(names || [])].filter(n => String(n).trim()).sort((a, b) => b.length - a.length)) {
+    // The name stands alone (not inside "우정1길" for a complex named "우정"); its 동 or 상가 follow, with commas.
+    const piece = new RegExp(`(?<![가-힣])${escape(name)}((?:\\s*[,，]?\\s*(?:${SHOPS}|\\d{1,4}\\s*동?)(?![\\d가-힣~-]))*)(?![\\d가-힣])`, 'g');
+    rest = rest.replace(piece, (whole, tail) => {
+      const unitList = [...new Set([...tail.matchAll(/\d{1,4}/g)].map(m => `${+m[0]}동`))];
+      apartments.push({name, units: unitList, shops: tail.includes(SHOPS) && !unitList.length, text: whole.trim()});
+      return ',';
+    });
+  }
+  return {apartments, rest};
+}
+
+export function describeApartment(a) {
+  if (a.shops) return `${a.name} 상가`;
+  if (!a.units.length) return `${a.name} 전체`;
+  return `${a.name} ${[...a.units].sort((x, y) => parseInt(x) - parseInt(y)).join('·')}`;
+}
+
+/** The label read with the rack's apartments: {entries, problems, apartments}. */
+export function parseRackLabel(text, rack) {
+  const {apartments, rest} = extractApartments(text, (rack?.apartments || []).map(a => a.name));
+  return {...parseLabel(rest), apartments};
+}
+
+function apartmentCell(rack, forms, unitSet) {
+  const apartment = (rack.apartments || []).find(a => apartmentAddresses(a).some(address =>
+    parseLabel(address).entries.some(e => e.from != null && forms.some(form => matches(e, form, new Set())))));
+  if (!apartment) return null;
+  const mine = labelled(rack).flatMap(([cell, text]) => parseRackLabel(text, rack).apartments.filter(a => a.name === apartment.name).map(a => [+cell, a]));
+  if (!mine.length) return null;
+  const unit = [...unitSet][0] || null;
+  const narrow = unitSet.size ? mine.find(([, a]) => a.units.some(u => unitSet.has(u))) : mine.find(([, a]) => a.shops);
+  const whole = mine.find(([, a]) => !a.units.length && !a.shops);
+  const hit = narrow || whole;
+  return hit ? {cell: hit[0], outside: false, apartment: apartment.name, unit} : {state: 'unassigned'};
+}
+
 export function locate(rack, road, parcel, source = '') {
   if (!configured(rack)) return {state: 'notConfigured'};
-  const parsed = labelled(rack).map(([cell, text]) => [+cell, parseLabel(text).entries]);
+  const parsed = labelled(rack).map(([cell, text]) => [+cell, parseRackLabel(text, rack).entries]);
   const roadFirst = (rack.priority || PRIORITY.ROAD) === PRIORITY.ROAD;
   const forms = [sortingAddress(road, Kind.ROAD), sortingAddress(parcel, Kind.PARCEL)].filter(Boolean)
     .sort((a, b) => ((a.kind === Kind.ROAD) === roadFirst ? 0 : 1) - ((b.kind === Kind.ROAD) === roadFirst ? 0 : 1));
   const unitSet = units(source);
+  // An address of an apartment named on the labels goes by its 동 (shops' addresses too: residents use them).
+  const byApartment = apartmentCell(rack, forms, unitSet);
+  if (byApartment) return byApartment;
   for (const form of forms) {
     let best = null;
     for (const [cell, entries] of parsed) {
@@ -184,7 +233,8 @@ export function exportText(rack) {
   const lines = [`${HEADER} · ${rack.name || '구분대'} · ${rack.columns}×${rack.rows}`,
     `주소 기준: ${rack.priority === PRIORITY.PARCEL ? '지번 우선' : '도로명 우선'}`,
     `구역 밖 칸: ${rack.outside ? rack.outside : '없음'}`];
-  for (const [cell, text] of labelled(rack).sort((a, b) => +a[0] - +b[0])) lines.push(`${cell}: ${String(text).replace(/\s*\n\s*/g, ', ').trim()}`);
+  for (const a of rack.apartments || []) lines.push(`아파트: ${a.name} | ${a.main || ''} | ${a.shops || ''}`.replace(/[\s|]+$/, ''));
+  for (const [cell, text] of labelled(rack).sort((a, b) => +a[0] - +b[0])) lines.push(`${cell}: ${String(text).replace(/,?\s*\n\s*/g, ', ').trim()}`);
   return lines.join('\n');
 }
 
@@ -195,12 +245,15 @@ export function importText(text) {
   if (head < 0) return null;
   const m = /^도로명변환기 구분대(?:\s*·\s*(.+?))?\s*·\s*(\d+)\s*[×xX*]\s*(\d+)$/.exec(lines[head]);
   if (!m) return null;
-  const rack = {name: (m[1] || '구분대').trim(), columns: +m[2], rows: +m[3], labels: {}, priority: PRIORITY.ROAD, outside: null};
+  const rack = {name: (m[1] || '구분대').trim(), columns: +m[2], rows: +m[3], labels: {}, priority: PRIORITY.ROAD, outside: null, apartments: []};
   if (!configured(rack) || rack.columns > 12 || rack.rows > 12) return null;
   const problems = [];
   for (const line of lines.slice(head + 1)) {
     let c;
-    if ((c = /^주소 기준\s*:\s*(.+)$/.exec(line))) rack.priority = c[1].includes('지번') ? PRIORITY.PARCEL : PRIORITY.ROAD;
+    if ((c = /^아파트\s*:\s*(.+)$/.exec(line))) {
+      const [name, main = '', shops = ''] = c[1].split('|').map(s => s.trim());
+      if (name) rack.apartments.push({name, main, shops});
+    } else if ((c = /^주소 기준\s*:\s*(.+)$/.exec(line))) rack.priority = c[1].includes('지번') ? PRIORITY.PARCEL : PRIORITY.ROAD;
     else if ((c = /^구역 밖 칸\s*:\s*(\d+)?/.exec(line))) rack.outside = c[1] && +c[1] <= cellCount(rack) ? +c[1] : null;
     else if ((c = /^(\d+)\s*[:：]\s*(.+)$/.exec(line)) && +c[1] >= 1 && +c[1] <= cellCount(rack)) rack.labels[+c[1]] = c[2].trim();
     else problems.push(line);
