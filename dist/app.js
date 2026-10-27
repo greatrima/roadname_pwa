@@ -11,25 +11,13 @@ import {visibleRecent, addRecent} from './recent-address.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.0.1';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
-### 새 기능
-- **순로구분 모드**: 지정한 구분대의 칸 번호 표시
-- **아파트 사전설정**: 아파트 주소를 묶어 동별로 칸 지정
-- **최근 주소**: 최근 변환한 주소를 다시 변환
-- **기억 목록**: 내 수정 기억 보기·지우기
-- **구분대 내보내기·불러오기**
-
 ### 개선점
-- 설정 화면 새 디자인
-- 순로구분 설정 한곳으로 정리
-- 정보 메뉴 정리
-
-### 고친 점
-- 설정에서 돌아오면 맨 위로 가던 문제
-
-순로구분 기능 추가하면서 3.0 올려야했는데 클로드가 말을 안들었어요
+**최근기록 수정**
+- 노출 갯수 설정 가능
+- 기록을 펼쳐도 결과가 밀리지 않음
 `;
 $('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
 const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
