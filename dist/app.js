@@ -769,22 +769,44 @@ function recentRow(e, onPick) {
   if (onPick) row.onclick = () => onPick(e);
   return row;
 }
+/** "우정동 228-2": an address without its 시·도 and 시·군·구. */
+function shortAddress(address) {
+  const parts = parseParts(address);
+  return (parts ? [parts.name, parts.number].filter(v => v != null && v !== '').join(' ') : '') || address;
+}
+/** One line: "우정동 228-2  → 우정안길 28" and the time on the right. */
+function recentLine(e, onPick) {
+  const row = document.createElement('button'), text = document.createElement('span'), time = document.createElement('small');
+  row.type = 'button'; row.className = 'recent-line';
+  text.append(shortAddress(e.recognized));
+  if (e.converted && e.converted !== e.recognized) text.append(Object.assign(document.createElement('em'), {textContent: `→ ${shortResult(e.converted)}`}));
+  time.textContent = recentTime(e.at);
+  row.append(text, time);
+  row.setAttribute('aria-label', `최근 기록 ${e.recognized}`);
+  row.onclick = () => onPick(e);
+  return row;
+}
 /**
- * Always there while it has addresses (not only while typing): a grey box whose header ("최근 주소 3" ▾/▴) folds
- * and opens the rows; the choice stays until changed, so the history reads as history and does not pop away.
+ * "최근 기록" under the input while it has addresses: folded, a thin divider ("── 최근 기록 ──── ▾"); opened, one
+ * line per address, at most three in sight and the rest scrolled inside, so the result below is never pushed off the
+ * screen. Opened or folded stays as chosen.
  */
 function showRecent() {
   const list = $('recentList'), entries = recentEntries(), open = flag(KEYS.recentOpen);
   const header = document.createElement('button');
   header.type = 'button'; header.className = 'recent-header';
   header.setAttribute('aria-expanded', String(open));
-  header.insertAdjacentHTML('afterbegin', CLOCK);
-  header.append(`최근 주소 ${entries.length}`, Object.assign(document.createElement('span'), {className: 'recent-fold', textContent: open ? '▴' : '▾'}));
+  header.setAttribute('aria-label', open ? '최근 기록 접기' : '최근 기록 펼치기');
+  header.append(Object.assign(document.createElement('span'), {className: 'recent-title', textContent: '최근 기록'}),
+    Object.assign(document.createElement('span'), {className: 'recent-fold', textContent: open ? '▴' : '▾'}));
   header.onclick = () => { store.set(KEYS.recentOpen, open ? '' : '1'); showRecent(); };
-  list.replaceChildren(header, ...(open ? entries.map(e => recentRow(e, pick => {
+  const rows = document.createElement('div');
+  rows.className = 'recent-rows';
+  rows.append(...entries.map(e => recentLine(e, pick => {
     $('addressInput').value = pick.recognized; $('addressInput').blur();
     $('copyAddress').disabled = false; submitManualAddress();
-  })) : []));
+  })));
+  list.replaceChildren(header, ...(open ? [rows] : []));
   list.hidden = !entries.length;
 }
 function renderRecentPage() {

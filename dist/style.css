@@ -219,10 +219,18 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 :root.keyboard .app-shell{height:var(--visible-height)}
 :root.keyboard dialog{max-height:calc(var(--visible-height) - 16px);margin-top:calc(var(--visible-top) + 8px);margin-bottom:auto}
 /* 3.0.0: recent addresses, memory list, apartments, maker and share pages */
-.recent-list{margin-top:8px;border-radius:14px;background:#F1F3F7;padding:4px 8px 8px}
-.recent-list svg{width:18px;height:18px;flex:none;fill:none;stroke:#8A93A6;stroke-width:2;stroke-linecap:round}
-.recent-header{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:0 6px;background:none;border:0;font-size:13px;font-weight:700;color:var(--muted)}
-.recent-header .recent-fold{margin-left:2px;font-size:12px}
+.recent-list{margin-top:4px}
+.recent-header{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;padding:0 4px 0 0;background:none;border:0;border-radius:0;font-size:12px;font-weight:500;color:var(--muted)}
+.recent-header::before{content:"";width:14px;height:1px;background:var(--line,#DFE4EB);flex:none}
+.recent-header .recent-title{flex:none}
+.recent-header::after{content:"";order:1;flex:1;height:1px;background:var(--line,#DFE4EB)}
+.recent-header .recent-fold{order:2;font-size:12px}
+/* At most three lines in sight; the scrollbar's room is kept so the lines never shift when it appears. */
+.recent-rows{max-height:140px;overflow-y:auto;scrollbar-gutter:stable}
+.recent-line{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:0 6px 0 14px;background:none;border:0;border-radius:0;text-align:left;font-size:14px;font-weight:500;color:var(--ink,#17202b)}
+.recent-line span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recent-line em{font-style:normal;color:var(--muted);margin-left:8px}
+.recent-line small{flex:none;font-size:12px;color:var(--muted)}
 .recent-item{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;margin-top:6px;padding:8px 12px;background:white;border:0;border-radius:10px;text-align:left;font-size:15px;font-weight:500;color:var(--ink,#17202b)}
 .recent-item span{display:flex;flex-direction:column;gap:2px;min-width:0}
 .recent-item small{font-size:13px;color:var(--muted);white-space:pre}
