@@ -42,7 +42,7 @@ const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vwor
   alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
   seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts',
   offlineMode: 'roadname-offline-mode', recentLimit: 'roadname-recent-limit', recentMidnight: 'roadname-recent-midnight',
-  recentAddresses: 'roadname-recent-addresses', recentOpen: 'roadname-recent-open'};
+  recentAddresses: 'roadname-recent-addresses', recentOpen: 'roadname-recent-open', recentLines: 'roadname-recent-lines'};
 const store = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
@@ -741,6 +741,7 @@ $('addressInput').oninput = () => {
 };
 
 // ---- "최근 주소": under the empty, focused input, newest first; a tap converts it again ----
+const recentLines = () => Math.min(10, Math.max(2, parseInt(store.get(KEYS.recentLines), 10) || 3));
 const recentLimit = () => Math.max(0, parseInt(store.get(KEYS.recentLimit), 10) || 0);
 function recentAll() { try { return JSON.parse(store.get(KEYS.recentAddresses) || '[]'); } catch { return []; } }
 const saveRecent = list => store.set(KEYS.recentAddresses, list.length ? JSON.stringify(list) : '');
@@ -806,6 +807,8 @@ function showRecent() {
     $('addressInput').value = pick.recognized; $('addressInput').blur();
     $('copyAddress').disabled = false; submitManualAddress();
   })));
+  // At most the chosen number of lines in sight (3 unless set, 2~10); more scroll inside.
+  rows.style.maxHeight = `${recentLines() * 40 + 20}px`;
   list.replaceChildren(header, ...(open ? [rows] : []));
   list.hidden = !entries.length;
 }
@@ -817,6 +820,11 @@ $('recentLimit').onchange = () => {
   const limit = Math.min(999, Math.max(0, parseInt($('recentLimit').value, 10) || 0));
   store.set(KEYS.recentLimit, limit ? String(limit) : '');
   saveRecent(recentAll().slice(0, limit));
+  settingsValues(); showRecent();
+};
+$('recentLines').onchange = () => {
+  const lines = parseInt($('recentLines').value, 10);
+  store.set(KEYS.recentLines, lines ? String(Math.min(10, Math.max(2, lines))) : '');
   settingsValues(); showRecent();
 };
 $('recentMidnight').onchange = () => store.set(KEYS.recentMidnight, $('recentMidnight').checked ? '1' : '');
@@ -919,6 +927,7 @@ function settingsValues() {
   $('memoryCount').textContent = `${memory.pairs.size + memory.names.size}개`;
   $('recentLimit').value = recentLimit() || '';
   $('recentMidnight').checked = flag(KEYS.recentMidnight);
+  $('recentLines').value = recentLines();
   $('recentCount').textContent = `${recentEntries().length}개`;
   $('apartmentsValue').textContent = `${(activeRack()?.apartments || []).length}곳`;
   sortingValues();

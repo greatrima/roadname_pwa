@@ -226,7 +226,7 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .recent-header::after{content:"";order:1;flex:1;height:1px;background:var(--line,#DFE4EB)}
 .recent-header .recent-fold{order:2;font-size:12px}
 /* At most three lines in sight; the scrollbar's room is kept so the lines never shift when it appears. */
-.recent-rows{max-height:140px;overflow-y:auto;scrollbar-gutter:stable}
+.recent-rows{overflow-y:auto;scrollbar-gutter:stable}
 .recent-line{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:0 6px 0 14px;background:none;border:0;border-radius:0;text-align:left;font-size:14px;font-weight:500;color:var(--ink,#17202b)}
 .recent-line span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .recent-line em{font-style:normal;color:var(--muted);margin-left:8px}
