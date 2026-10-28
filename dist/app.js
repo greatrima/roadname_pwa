@@ -8,20 +8,30 @@ import {AddressMemory, numberedWords} from './address-memory.mjs';
 import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from './local-address.mjs';
 import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
 import {visibleRecent, addRecent} from './recent-address.mjs';
+import {regionLine} from './region-label.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '3.1.0';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 개선점
-**최근기록 수정**
-- 노출 갯수 설정 가능
-- 기록을 펼쳐도 결과가 밀리지 않음
+**메인 화면 새 디자인**
+- 헤더에 로고와 기본 지역 표시
+- 카메라 화면 정리
+
+**설정 정리**
+- 아이콘 디자인 통일
+- 업데이트·제작자·공유·버전을 "앱 정보"로 합침
+- 변환 진동·소리를 "변환 알림"으로 묶음
+- 인식 보조 설명 간단하게
+
+### 빠진 기능
+- 화면 정지·영역 선택
 `;
-$('appVersion').textContent = APP_VERSION; $('appVersionBadge').textContent = `v${APP_VERSION}`;
-const photo = $('photo'), overlay = $('selection'), ctx = photo.getContext('2d', {willReadFrequently: true});
-let stream = null, hasPhoto = false, crop = null, drag = null, busy = false, job = 0, paddle = null, paddleReject = null, tess = null, cacheBusy = false;
+$('appVersion').textContent = APP_VERSION; $('webVersion').textContent = APP_VERSION;
+const photo = $('photo'), ctx = photo.getContext('2d', {willReadFrequently: true});
+let stream = null, hasPhoto = false, busy = false, job = 0, paddle = null, paddleReject = null, tess = null, cacheBusy = false;
 
 // ---- device-local settings ----
 const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vworld: 'roadname-vworld-key', vworldDefault: 'roadname-vworld-default',
@@ -122,20 +132,28 @@ function renderLocalities(selected = []) {
   $('regionLocality').replaceChildren(...names.map(n => { const o = new Option(n, n); o.selected = selected.includes(n); return o; }));
   $('regionLocalityGroup').hidden = !names.length;
 }
+let regionFollow = null;
 function saveRegion() {
-  // The local data follows the region (only once it was taken).
-  setTimeout(() => { if (localMeta()) void downloadLocalData(true); }, 0);
+  // The local data follows the region (only once it was taken), after the picking has settled: 시 → 구 → 동 in a row
+  // takes one region's data, not each step's.
+  clearTimeout(regionFollow);
+  regionFollow = setTimeout(() => { if (localMeta()) void downloadLocalData(true); }, 1200);
   const province = $('regionProvince').value, district = province ? selectedDistrict() : '';
   const localities = district ? [...$('regionLocality').selectedOptions].map(o => o.value) : [];
   store.set(KEYS.region, province ? `${province}|${district}` : '');
   store.set(KEYS.localities, localities.length ? JSON.stringify(localities) : '');
   showRegion(); tracker.clear(); autoPolicy.reset();
 }
+/** The header's region line ("전남광주 우정시 통상면"); without room the 시·도 is left out. */
 function showRegion() {
-  const region = currentRegion();
-  $('regionName').textContent = (regionName(region) || '지역 설정 안 됨') + (region.localities.length ? ` · ${region.localities.length}곳` : '');
+  const region = currentRegion(), name = $('regionName'), line = regionLine(region);
+  name.textContent = line || '지역 설정 하기';
+  $('regionButton').setAttribute('aria-label', line ? `지역 ${regionName(region)}, 지역 설정` : '지역 설정 하기');
+  const room = name.closest('.titles').clientWidth;
+  if (line && ($('regionButton').scrollWidth > room || name.scrollWidth > name.clientWidth)) name.textContent = regionLine(region, true);
   if ($('regionValue')) settingsValues();
 }
+new ResizeObserver(() => showRegion()).observe(document.querySelector('.toolbar .titles'));
 
 // ---- address state (Android MainActivity flow) ----
 const WAITING_RESULT = '기준 주소를 인식하거나 입력해주세요';
@@ -410,7 +428,7 @@ function updateScanUi() {
   $('pauseButton').textContent = scanning ? '일시정지' : '재개';
   const guide = $('liveGuide');
   guide.classList.toggle('scanning', live && scanning);
-  guide.dataset.state = !live ? '' : $('engine').value === 'tesseract' ? '수동 인식' : !scanning ? (selected ? '' : '일시정지') : liveReady ? '' : '준비 중';
+  guide.dataset.state = !live ? '' : !scanning ? (selected ? '' : '일시정지') : liveReady ? '' : '준비 중';
   updateRunLabel();
 }
 function startScanning() {
@@ -421,7 +439,7 @@ function stopScanning() { scanning = false; scanGeneration++; clearTimeout(scanT
 function scheduleFrame(delay) { clearTimeout(scanTimer); const gen = scanGeneration; scanTimer = setTimeout(() => { if (gen === scanGeneration) void liveFrame(gen); }, delay); }
 async function liveFrame(gen) {
   if (!scanning || gen !== scanGeneration) return;
-  if (!liveCamera() || busy || cacheBusy || document.hidden || editing || $('engine').value === 'tesseract') { scheduleFrame(600); return; }
+  if (!liveCamera() || busy || cacheBusy || document.hidden || editing) { scheduleFrame(600); return; }
   const canvas = guideCanvas();
   if (!canvas) { scheduleFrame(300); return; }
   const started = performance.now();
@@ -433,8 +451,12 @@ async function liveFrame(gen) {
   finally { canvas.width = 1; canvas.height = 1; }
   if (gen !== scanGeneration || !scanning) return;
   if (!liveReady) { liveReady = true; updateScanUi(); }
-  if (result) await onLiveResult(result, performance.now(), gen);
-  if (gen === scanGeneration && scanning) scheduleFrame(Math.max(150, 350 - (performance.now() - started)));
+  const took = performance.now() - started;
+  try { if (result) await onLiveResult(result, performance.now(), gen); }
+  catch (e) { diag.ocrStage = `처리 오류: ${e.message}`; }
+  // The next frame after a pause that grows with the phone's reading time (a 2 s read rests 1.2 s), never shorter
+  // than 150 ms: a slow phone is not kept at full load.
+  if (gen === scanGeneration && scanning) scheduleFrame(Math.min(2000, Math.max(150, 350 - took, took * 0.6)));
 }
 async function onLiveResult(result, now, gen) {
   if (editing || $('addressInput') === document.activeElement) return;
@@ -514,12 +536,13 @@ const seconds = ms => (ms / 1000).toFixed(2);
 function error(message) { $('error').textContent = message; $('error').hidden = !message; }
 function setBusy(value) {
   busy = value;
-  for (const id of ['run', 'cameraButton', 'uploadButton', 'selectAll', 'rotate', 'reset', 'engine', 'nativeButton']) $(id).disabled = value || cacheBusy;
-  $('run').disabled = value || cacheBusy || (!hasPhoto && !stream);
+  for (const id of ['run', 'cameraButton', 'uploadButton', 'rotate', 'reset', 'engine', 'nativeButton']) $(id).disabled = value || cacheBusy;
+  $('run').disabled = value || cacheBusy || !hasPhoto;
   $('convertButton').disabled = value || cacheBusy || converting;
-  $('addressInput').readOnly = value; overlay.style.pointerEvents = value ? 'none' : 'auto'; $('progressPanel').hidden = !value;
+  $('addressInput').readOnly = value; $('progressPanel').hidden = !value;
 }
-function updateRunLabel() { $('run').textContent = liveCamera() ? '화면 정지' : '인식하기'; }
+/** "인식하기" reads a chosen photo again (another engine, after turning it); the live camera needs no button. */
+function updateRunLabel() { $('run').hidden = !hasPhoto; }
 function progress(text, pct, detail) { $('status').textContent = text; if (Number.isFinite(pct)) $('progress').value = pct; else $('progress').removeAttribute('value'); if (detail) $('progressDetail').textContent = detail; }
 function stopCamera() {
   stopScanning();
@@ -529,27 +552,24 @@ function stopCamera() {
 function clearResults() { $('results').replaceChildren(); $('resultDetails').hidden = true; $('resultDetails').open = false; clearAddressState(); }
 function fitPhoto() { if (!hasPhoto) return; const scale = Math.min($('stage').clientWidth / photo.width, $('stage').clientHeight / photo.height); $('photoWrap').style.width = photo.width * scale + 'px'; $('photoWrap').style.height = photo.height * scale + 'px'; }
 new ResizeObserver(fitPhoto).observe($('stage'));
-function drawSelection() {
-  const c = overlay.getContext('2d'); c.clearRect(0, 0, overlay.width, overlay.height); if (!crop) return;
-  const {x, y, w, h} = crop; c.fillStyle = '#101c3680'; c.fillRect(0, 0, overlay.width, overlay.height); c.clearRect(x, y, w, h); c.strokeStyle = '#ff75ad'; c.lineWidth = Math.max(3, photo.width / 200); c.strokeRect(x, y, w, h);
-}
-function selectAll() { crop = {x: 0, y: 0, w: photo.width, h: photo.height}; drawSelection(); }
-function showPhoto(source, initialCrop = null) {
+function showPhoto(source) {
   stopCamera(); const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
   if (!sw || !sh) throw new Error('사진 크기를 읽을 수 없습니다. 다른 사진을 선택해주세요.');
   const factor = Math.min(1, 2400 / Math.max(sw, sh)); photo.width = Math.round(sw * factor); photo.height = Math.round(sh * factor); ctx.drawImage(source, 0, 0, photo.width, photo.height);
-  overlay.width = photo.width; overlay.height = photo.height; hasPhoto = true; $('empty').hidden = true; $('photoWrap').hidden = false; $('cropTools').hidden = false; $('cameraFallback').hidden = true;
+  hasPhoto = true; $('empty').hidden = true; $('photoWrap').hidden = false; $('cropTools').hidden = false; $('cameraFallback').hidden = true;
   document.querySelector('.camera-pane').classList.add('has-photo'); fitPhoto(); clearResults(); error(''); setBusy(false);
-  if (initialCrop) { crop = {x: initialCrop.x * factor, y: initialCrop.y * factor, w: initialCrop.w * factor, h: initialCrop.h * factor}; drawSelection(); }
-  else selectAll();
   updateScanUi();
+  void run();
 }
 async function openCamera() {
   if (busy || cacheBusy) return; error(''); stopCamera();
   if (!navigator.mediaDevices?.getUserMedia) { $('cameraFallback').hidden = false; error('Safari에서 열어주세요. 기본 카메라 촬영이나 사진 선택도 가능합니다.'); return; }
   $('cameraButton').disabled = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({audio: false, video: {facingMode: {ideal: 'environment'}, width: {ideal: 1920}, height: {ideal: 1080}}});
+    const opened = await navigator.mediaDevices.getUserMedia({audio: false, video: {facingMode: {ideal: 'environment'}, width: {ideal: 1920}, height: {ideal: 1080}}});
+    // Sent to the background while the camera was opening: let it go now and open again on return.
+    if (document.hidden) { for (const t of opened.getTracks()) t.stop(); resumeCamera = true; return; }
+    stream = opened;
     $('video').srcObject = stream; $('video').hidden = false; await $('video').play(); $('photoWrap').hidden = true; $('empty').hidden = true; $('cropTools').hidden = true; $('liveGuide').hidden = false; $('zoomRow').hidden = false; $('cameraButton').hidden = true; $('cameraFallback').hidden = true;
     hasPhoto = false; document.querySelector('.camera-pane').classList.remove('has-photo'); $('run').disabled = false; $('zoom').value = 1; updateZoom();
     startScanning();
@@ -581,25 +601,12 @@ function guideCanvas(maxSide = 1600) {
   c.getContext('2d').drawImage($('video'), r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
   return c;
 }
-/** Freeze: keep the visible frame, pre-select the guide box, then recognize that selection. */
-function capture() {
-  const v = $('video'), visible = videoRect($('stage').getBoundingClientRect()), guide = videoRect(guideRect());
-  if (!visible) return false;
-  const c = document.createElement('canvas'); c.width = Math.round(visible.w); c.height = Math.round(visible.h);
-  c.getContext('2d').drawImage(v, visible.x, visible.y, visible.w, visible.h, 0, 0, c.width, c.height);
-  showPhoto(c, guide ? {x: guide.x - visible.x, y: guide.y - visible.y, w: guide.w, h: guide.h} : null);
-  return true;
-}
 async function readFile(file) {
   if (!file || busy || cacheBusy) return; error(''); const url = URL.createObjectURL(file);
   try { const img = new Image(); img.src = url; await img.decode(); showPhoto(img); } catch { error('사진을 읽지 못했습니다. JPG·PNG 사진 또는 기본 카메라 촬영을 이용해주세요.'); } finally { URL.revokeObjectURL(url); }
 }
-function point(e) { const r = overlay.getBoundingClientRect(); return {x: Math.max(0, Math.min(photo.width, (e.clientX - r.left) * photo.width / r.width)), y: Math.max(0, Math.min(photo.height, (e.clientY - r.top) * photo.height / r.height))}; }
-overlay.addEventListener('pointerdown', e => { if (busy) return; drag = {...point(e), previous: crop}; overlay.setPointerCapture(e.pointerId); });
-overlay.addEventListener('pointermove', e => { if (!drag) return; const p = point(e); crop = {x: Math.min(drag.x, p.x), y: Math.min(drag.y, p.y), w: Math.abs(p.x - drag.x), h: Math.abs(p.y - drag.y)}; drawSelection(); });
-function endDrag() { if (!drag) return; if (!crop || crop.w < 20 || crop.h < 12) { crop = drag.previous; drawSelection(); } else { clearResults(); setStatus('영역을 바꿨습니다. ‘인식하기’를 눌러주세요.'); } drag = null; }
-overlay.addEventListener('pointerup', endDrag); overlay.addEventListener('pointercancel', endDrag);
-function selectedCanvas() { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(crop.w)); c.height = Math.max(1, Math.round(crop.h)); c.getContext('2d').drawImage(photo, crop.x, crop.y, crop.w, crop.h, 0, 0, c.width, c.height); return c; }
+/** The whole photo, copied (the reading ends by shrinking its canvas). */
+function selectedCanvas() { const c = document.createElement('canvas'); c.width = photo.width; c.height = photo.height; c.getContext('2d').drawImage(photo, 0, 0); return c; }
 
 // ---- OCR engines (one PaddleOCR request at a time) ----
 let ocrQueue = Promise.resolve();
@@ -612,7 +619,8 @@ function paddleRecognize(canvas, onProgress) {
     if (!paddle) paddle = new Worker('./paddle-worker.js');
     paddleReject = reject;
     paddle.onmessage = ({data}) => { if (data.type === 'progress') onProgress?.(data); else { paddleReject = null; data.type === 'result' ? resolve(data) : reject(new Error(data.message)); } };
-    paddle.onerror = e => { paddleReject = null; reject(new Error(e.message || '한국어 인식기를 실행하지 못했습니다. 페이지를 다시 열어주세요.')); };
+    // A worker that failed to start (offline, missing file) answers nothing again: start a new one next time.
+    paddle.onerror = e => { paddleReject = null; reject(new Error(e.message || '한국어 인식기를 실행하지 못했습니다. 페이지를 다시 열어주세요.')); disposePaddle(); };
     const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     paddle.postMessage({width: canvas.width, height: canvas.height, pixels: pixels.buffer}, [pixels.buffer]);
   });
@@ -666,25 +674,36 @@ function resumeScanning() {
   $('results').replaceChildren(); $('resultDetails').hidden = true; clearAddressState(); error(''); $('informationScroll').scrollTop = 0;
   if (liveCamera()) startScanning();
   else {
-    hasPhoto = false; crop = null; photo.width = 1; photo.height = 1; overlay.width = 1; overlay.height = 1;
+    hasPhoto = false; photo.width = 1; photo.height = 1;
     document.querySelector('.camera-pane').classList.remove('has-photo'); $('empty').hidden = false; $('photoWrap').hidden = true; $('cropTools').hidden = true;
     setBusy(false); void openCamera();
   }
 }
 
 // ---- settings: buttons, toggles, dictionary ----
-const BUTTONS = [['regionButton', '지역'], ['mapButton', '지도에서 보기'], ['convertButton', '주소 변환'], ['run', '화면 정지·인식하기'], ['copyAddress', '인식 주소 복사'], ['copyResult', '변환 주소 복사']];
-const hiddenButtons = () => { try { return JSON.parse(store.get(KEYS.hidden) || '[]'); } catch { return []; } };
+// The region (now the header's line) and "화면 정지·인식하기" had switches before 3.1.0; their saved values are ignored.
+const BUTTONS = [['mapButton', '지도에서 보기', 'map'], ['convertButton', '주소 변환', 'convert'], ['copy', '주소 복사', 'copy']];
+const COPY_BUTTONS = ['copyAddress', 'copyResult'];
+const hiddenButtons = () => {
+  let hidden = [];
+  try { hidden = JSON.parse(store.get(KEYS.hidden) || '[]'); } catch {}
+  // Before 3.1.0 each copy button had its own switch: one of them off counts as copy off.
+  return COPY_BUTTONS.some(id => hidden.includes(id)) && !hidden.includes('copy') ? [...hidden, 'copy'] : hidden;
+};
 function applyButtonVisibility() {
   const hidden = hiddenButtons();
-  for (const [id] of BUTTONS) $(id).classList.toggle('user-hidden', hidden.includes(id));
+  for (const [id] of BUTTONS) for (const target of id === 'copy' ? COPY_BUTTONS : [id]) $(target).classList.toggle('user-hidden', hidden.includes(id));
 }
 function renderButtonSettings() {
   const hidden = hiddenButtons(), list = $('buttonSettings');
-  list.replaceChildren(...BUTTONS.map(([id, label]) => {
-    const row = document.createElement('label'); row.className = 'toggle'; const box = document.createElement('input');
+  list.replaceChildren(...BUTTONS.map(([id, label, icon]) => {
+    const row = document.createElement('label'); row.className = 'toggle'; row.dataset.icon = icon; const box = document.createElement('input');
     box.type = 'checkbox'; box.checked = !hidden.includes(id);
-    box.onchange = () => { const next = hiddenButtons().filter(x => x !== id); if (!box.checked) next.push(id); store.set(KEYS.hidden, next.length ? JSON.stringify(next) : ''); applyButtonVisibility(); };
+    box.onchange = () => {
+      const next = hiddenButtons().filter(x => x !== id && !(id === 'copy' && COPY_BUTTONS.includes(x)));
+      if (!box.checked) next.push(id);
+      store.set(KEYS.hidden, next.length ? JSON.stringify(next) : ''); applyButtonVisibility();
+    };
     row.append(box, label); return row;
   }));
 }
@@ -708,10 +727,9 @@ $('cameraButton').onclick = openCamera; $('zoom').oninput = updateZoom;
 $('pauseButton').onclick = () => { if (scanning) stopScanning(); else startScanning(); };
 $('uploadButton').onclick = () => $('upload').click(); $('nativeButton').onclick = () => $('nativeCapture').click();
 for (const id of ['upload', 'nativeCapture']) $(id).onchange = e => { readFile(e.target.files[0]); e.target.value = ''; };
-$('selectAll').onclick = () => { selectAll(); clearResults(); };
 $('rotate').onclick = () => { const c = document.createElement('canvas'); c.width = photo.height; c.height = photo.width; const x = c.getContext('2d'); x.translate(c.width, 0); x.rotate(Math.PI / 2); x.drawImage(photo, 0, 0); showPhoto(c); };
 $('reset').onclick = resumeScanning;
-$('run').onclick = () => { if (busy || cacheBusy) return; if (liveCamera()) { if (!capture()) return; } run(); };
+$('run').onclick = () => { if (!busy && !cacheBusy) void run(); };
 $('cancel').onclick = cancel;
 $('convertButton').onclick = () => { $('addressInput').blur(); submitManualAddress(); };
 $('candidateList').addEventListener('pointerdown', () => { candidateTouch = true; });
@@ -789,15 +807,19 @@ function showRecent() {
   header.append(Object.assign(document.createElement('span'), {className: 'recent-title', textContent: '최근 기록'}),
     Object.assign(document.createElement('span'), {className: 'recent-fold', textContent: open ? '▴' : '▾'}));
   header.onclick = () => { store.set(KEYS.recentOpen, open ? '' : '1'); showRecent(); };
-  const rows = document.createElement('div');
-  rows.className = 'recent-rows';
-  rows.append(...entries.map(e => recentLine(e, pick => {
-    $('addressInput').value = pick.recognized; $('addressInput').blur();
-    $('copyAddress').disabled = false; submitManualAddress();
-  })));
-  // At most the chosen number of lines in sight (3 unless set, 2~10); more scroll inside.
-  rows.style.maxHeight = `${recentLines() * 40 + 20}px`;
-  list.replaceChildren(header, ...(open ? [rows] : []));
+  list.replaceChildren(header);
+  if (open && entries.length) {
+    // Made only while opened (typing calls this at every key).
+    const rows = document.createElement('div');
+    rows.className = 'recent-rows';
+    rows.append(...entries.map(e => recentLine(e, pick => {
+      $('addressInput').value = pick.recognized; $('addressInput').blur();
+      $('copyAddress').disabled = false; submitManualAddress();
+    })));
+    // At most the chosen number of lines in sight (3 unless set, 2~10); more scroll inside.
+    rows.style.maxHeight = `${recentLines() * 40 + 20}px`;
+    list.append(rows);
+  }
   list.hidden = !entries.length;
 }
 function renderRecentPage() {
@@ -887,19 +909,6 @@ $('deleteApartment').onclick = () => {
   showSorting(); showSettingsPage('apartments');
 };
 
-// ---- "업데이트": this web version, the newest Android app on GitHub and its download, the notes ----
-let latestChecked = false;
-async function checkLatestApp() {
-  $('webVersion').textContent = APP_VERSION;
-  if (latestChecked) return;
-  try {
-    const release = await (await fetch('https://api.github.com/repos/greatrima/roadnameconverter/releases/latest', {cache: 'no-store'})).json();
-    const apk = (release.assets || []).find(a => a.name.endsWith('.apk'));
-    $('latestAppVersion').textContent = release.tag_name || '확인 못 함';
-    if (apk) $('downloadLatest').href = apk.browser_download_url;
-    latestChecked = true;
-  } catch { $('latestAppVersion').textContent = '확인 못 함'; }
-}
 $('copyAddress').onclick = () => copyText($('addressInput').value, '인식한 주소를 복사했습니다.');
 $('copyResult').onclick = () => { if (mapAddress) { void copyText(mapAddress, '변환 주소를 복사했습니다.'); confirmUse(); } };
 // The whole result is the copy target: easier than the small icon with one hand.
@@ -909,7 +918,8 @@ $('mapButton').onclick = () => { openMap(); if (mapAddress) confirmUse(); };
 let settingsPage = 'main', settingsBackTo = 'main';
 function settingsValues() {
   const region = currentRegion();
-  $('regionValue').textContent = (regionName(region) || '설정 안 됨') + (region.localities.length ? ` · ${region.localities.length}곳` : '');
+  $('regionValue').textContent = regionLine(region) || '설정 안 됨';
+  $('alertValue').textContent = alertSummary();
   $('assistValue').textContent = memoryOn() ? '켜짐' : '꺼짐';
   $('offlineValue').textContent = flag(KEYS.offlineMode) ? '켜짐' : '꺼짐';
   $('memoryCount').textContent = `${memory.pairs.size + memory.names.size}개`;
@@ -933,7 +943,7 @@ function showSettingsPage(name) {
   const main = settingsPage === 'main';
   $('settingsTitle').textContent = page.dataset.title || '설정';
   settingsBackTo = page.dataset.back || 'main';
-  $('settingsBack').hidden = main; $('settingsIcon').hidden = !main; $('appVersionBadge').hidden = !main;
+  $('settingsBack').hidden = main; $('settingsIcon').hidden = !main;
   if (settingsPage === 'feedback') $('feedbackMessage').textContent = '';
   if (settingsPage === 'racks') renderRackList();
   if (settingsPage === 'rack') renderRack(true);
@@ -943,7 +953,6 @@ function showSettingsPage(name) {
   if (settingsPage === 'recentPage') renderRecentPage();
   if (settingsPage === 'apartments') renderApartments();
   if (settingsPage === 'apartment') renderApartment();
-  if (settingsPage === 'update') checkLatestApp();
   settingsValues();
   $('settingsDialog').scrollTop = scroll;
 }
@@ -981,10 +990,15 @@ $('appVersionRow').onclick = () => {
   $('cacheMessage').textContent = developerMode() ? '개발자 모드를 켰습니다.' : '개발자 모드를 껐습니다.';
   diag.render();
 };
-// Both alerts are on until switched off; a browser that cannot vibrate (iPhone) shows only the sound switch.
+// "변환 알림": both alerts are on until switched off; a browser that cannot vibrate (iPhone) shows only the sound switch.
 for (const [id, key] of [['alertVibration', KEYS.alertVibrationOff], ['alertSound', KEYS.alertSoundOff]]) {
   $(id).checked = !flag(key);
-  $(id).onchange = () => store.set(key, $(id).checked ? '' : '1');
+  $(id).onchange = () => { store.set(key, $(id).checked ? '' : '1'); settingsValues(); };
+}
+/** The row's value: "진동 · 소리", "진동", "소리" or "꺼짐". */
+function alertSummary() {
+  const on = [navigator.vibrate && !flag(KEYS.alertVibrationOff) ? '진동' : '', !flag(KEYS.alertSoundOff) ? '소리' : ''].filter(Boolean);
+  return on.length ? on.join(' · ') : '꺼짐';
 }
 $('alertVibrationRow').hidden = !navigator.vibrate;
 $('memoryToggle').checked = memoryOn();
@@ -1036,7 +1050,6 @@ function showWhatsNew() {
   $('whatsNewTitle').textContent = `v${APP_VERSION} 업데이트 내역`;
   $('whatsNewDialog').showModal();
 }
-$('whatsNewButton').hidden = !WHATS_NEW.trim();
 $('whatsNewButton').onclick = () => { $('settingsDialog').close(); showWhatsNew(); };
 $('closeWhatsNew').onclick = $('okWhatsNew').onclick = () => $('whatsNewDialog').close();
 {
@@ -1084,7 +1097,7 @@ function cellText(cell, tail = '') {
  */
 function showSorting(fresh = false) {
   const card = $('sortingCard'), cell = $('sortingCell'), assign = $('sortingAssign'), state = sortingState(), r = shownResult;
-  $('appTitle').textContent = state.enabled ? `순로구분${activeRack(state) ? ` · ${activeRack(state).name}` : ''}` : '도로명변환기';
+  $('appTitle').textContent = state.enabled ? '순로구분' : '도로명변환기';
   if (!state.enabled || !r) { card.className = ''; cell.hidden = true; assign.hidden = true; return false; }
   const rack = activeRack(state);
   const verdict = rack ? locate(rack, roadForm(r), parcelForm(r), `${lastOcr?.text || ''}\n${$('addressInput').value}`) : {state: 'notConfigured'};
@@ -1329,12 +1342,17 @@ async function loadLocalData() {
     localData = parseLocal(mergeLocal(texts));
   } catch { localData = null; }
 }
-/** Takes the default region's district file; `quiet` (a region change) tells nothing unless it fails. */
+/**
+ * Takes the default region's district file; `quiet` (a region change) tells nothing unless it fails and never asks.
+ * Only the newest request keeps what it took, so quick region changes cannot leave another region's data behind.
+ */
+let localRequest = 0;
 async function downloadLocalData(quiet = false, chosen = null, auto = false) {
+  const request = ++localRequest;
   let region = chosen || currentRegion();
   // Without a chosen region the button takes the region found from the converted addresses, if any.
   if (!region.district && !chosen) { try { const found = autoDistrict(JSON.parse(store.get(KEYS.recent) || '[]')); if (found) { region = found; auto = true; } } catch {} }
-  if (!region.province || !region.district) { askRegion(); return; }
+  if (!region.province || !region.district) { if (!quiet) askRegion(); return; }
   if (!navigator.onLine) { $('localMessage').textContent = '인터넷 연결이 필요합니다.'; return; }
   if (!quiet) $('localMessage').textContent = '받는 중…';
   try {
@@ -1358,6 +1376,7 @@ async function downloadLocalData(quiet = false, chosen = null, auto = false) {
     }
     const data = parseLocal(mergeLocal(texts));
     if (!data) throw new Error('format');
+    if (request !== localRequest) return;
     const cache = await caches.open(LOCAL_CACHE);
     for (const key of await cache.keys()) await cache.delete(key);
     for (const [c, response] of responses) await cache.put(`./local/${c}.tsv.gz`, response);
@@ -1372,7 +1391,8 @@ function hasRegion() {
   if (currentRegion().district || localMeta()?.auto) return true;
   try { return !!autoDistrict(JSON.parse(store.get(KEYS.recent) || '[]')); } catch { return false; }
 }
-function askRegion() { if (confirm('우선 인식 지역을 먼저 정해 주세요.')) showSettingsPage('region'); }
+/** Without a region the region page opens, with the reason on it. */
+function askRegion() { showSettingsPage('region'); $('regionMessage').textContent = '지역을 먼저 정해 주세요.'; }
 $('offlineMode').checked = flag(KEYS.offlineMode);
 $('offlineMode').onchange = () => {
   if ($('offlineMode').checked && !hasRegion()) { $('offlineMode').checked = false; askRegion(); return; }
@@ -1440,7 +1460,8 @@ Promise.resolve(navigator.permissions?.query?.({name: 'camera'})).catch(() => nu
   .then(p => { if (p?.state !== 'denied' && !stream && !hasPhoto) void openCamera(); });
 
 // ---- offline readiness (required files only; Tesseract is cached when first used) ----
-const CACHE = 'roadname-assets-v15'; let swReady = null, cacheReady = false, updateReady = false;
+// The service worker's own cache name (sw.js), so files prepared here are the ones it serves.
+const CACHE = 'roadname-assets-v37'; let swReady = null, cacheReady = false, updateReady = false;
 const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 if ('serviceWorker' in navigator) swReady = navigator.serviceWorker.register('./sw.js').then(() => Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))])).catch(() => { $('cacheMessage').textContent = '오프라인 준비를 사용할 수 없습니다. 온라인 인식은 가능합니다.'; return null; });
 async function cacheFiles() { const res = await fetch('./cache-list.json'); if (!res.ok) throw new Error('파일 목록을 읽을 수 없습니다.'); return res.json(); }

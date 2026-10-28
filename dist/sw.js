@@ -1,6 +1,6 @@
-const CACHE='roadname-assets-v36';
-const SHELL=['./index.html','./style.css?v=36','./app.js?v=36','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./recent-address.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
-const OPTIONAL=['./apple-touch-icon.png','./icon-192.png','./icon-512.png','./jebichan-icon.png','./share-qr.png','./sanbug-logo.png','./licenses.txt'];
+const CACHE='roadname-assets-v37';
+const SHELL=['./index.html','./style.css?v=37','./app.js?v=37','./address-core.mjs','./address-convert.mjs','./address-suggest.mjs','./address-memory.mjs','./sorting.mjs','./local-address.mjs','./recent-address.mjs','./region-label.mjs','./address-dictionary.mjs','./dictionary-worker.mjs','./ocr-core.js','./paddle-worker.js','./manifest.webmanifest','./cache-list.json','./vendor/tesseract.min.js'];
+const OPTIONAL=['./apple-touch-icon.png','./icon-192.png','./icon-512.png','./jebichan-icon.png','./share-qr.png','./logo-96.png','./logo-256.png','./licenses.txt'];
 const same=(a,b)=>new URL(a,self.location).pathname===b;
 self.addEventListener('install',event=>event.waitUntil((async()=>{
  const cache=await caches.open(CACHE);
@@ -19,10 +19,16 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key.startsWith('roadname-assets-')&&key!==CACHE)await caches.delete(key);await self.clients.claim()})()));
 // App code (HTML/JS/JSON) is network-first so a deploy takes effect on the next launch;
 // offline or on a slow connection (3 s) the cached copy is used. Models/runtime stay cache-first.
+// Nothing cached yet (a file new in this version): the network is waited for to the end instead of failing.
 const withTimeout=(promise,ms)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),ms))]);
 async function networkFirst(cache,request,key){
- try{const res=await withTimeout(fetch(request),3000);if(res.ok&&!res.redirected){await cache.put(key,res.clone());return res}throw new Error(String(res.status))}
- catch{return await cache.match(key)||Response.error()}
+ const keep=async res=>{if(res.ok&&!res.redirected){await cache.put(key,res.clone());return res}throw new Error(String(res.status))};
+ const network=fetch(request);network.catch(()=>{});
+ try{return await keep(await withTimeout(network,3000))}
+ catch{
+  const saved=await cache.match(key);if(saved)return saved;
+  try{return await keep(await network)}catch{return Response.error()}
+ }
 }
 self.addEventListener('fetch',event=>{
  const request=event.request,url=new URL(request.url);if(request.method!=='GET'||url.origin!==self.location.origin)return;

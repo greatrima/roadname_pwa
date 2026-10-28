@@ -1,8 +1,8 @@
 {
   "required": [
     "./index.html",
-    "./app.js?v=36",
-    "./style.css?v=36",
+    "./app.js?v=37",
+    "./style.css?v=37",
     "./address-core.mjs",
     "./address-convert.mjs",
     "./address-suggest.mjs",
@@ -10,6 +10,7 @@
     "./sorting.mjs",
     "./local-address.mjs",
     "./recent-address.mjs",
+    "./region-label.mjs",
     "./address-dictionary.mjs",
     "./dictionary-worker.mjs",
     "./ocr-core.js",
@@ -31,7 +32,8 @@
     "./icon-512.png",
     "./jebichan-icon.png",
     "./share-qr.png",
-    "./sanbug-logo.png",
-    "./licenses.txt"
+    "./licenses.txt",
+    "./logo-96.png",
+    "./logo-256.png"
   ]
 }
