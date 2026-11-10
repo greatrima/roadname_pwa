@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLabel, describe, locate, overlaps, piece, summary, exportText, importText, PRIORITY, parseRackLabel, describeApartment, apartmentCells, assignApartment} from '../dist/sorting.mjs';
+import {parseLabel, describe, locate, overlaps, piece, summary, exportText, importText, PRIORITY, parseRackLabel, describeApartment, apartmentCells, assignApartment, apartmentUnits, spreadUnits, placeApartment} from '../dist/sorting.mjs';
 
 // Invented names only.
 const rack = (labels, extra = {}) => ({name: '내 구역', columns: 6, rows: 6, labels: Object.fromEntries(labels), priority: PRIORITY.ROAD, outside: null, ...extra});
@@ -94,4 +94,18 @@ test('sorting: the apartment table writes the cells\' labels (as in the app)', (
   const written = assignApartment(labels, '우정아파트', [['101', 3], ['103', 4], ['104동', 4], ['상가', 9], ['전체', 5]]);
   assert.deepEqual(written, {3: '우정1길 1~19, 우정아파트 101', 4: '우정아파트 103,104', 5: '우정아파트', 9: '우정아파트 상가', 10: '우정길 1~29'});
   assert.deepEqual(assignApartment(labels, '우정아파트', []), {3: '우정1길 1~19', 10: '우정길 1~29'});
+});
+
+test('sorting: dragged cells take the 동 of an apartment spread in order (as in the app)', () => {
+  assert.deepEqual(apartmentUnits('101동-103동, 107동'), ['101', '102', '103', '107']);
+  assert.deepEqual(apartmentUnits('103~101'), ['103', '102', '101']);
+  assert.deepEqual(apartmentUnits('101, 101~102'), ['101', '102']);
+  const spread = spreadUnits(apartmentUnits('101~105'), [3, 1, 2]);
+  assert.deepEqual(spread, [['101', 1], ['102', 1], ['103', 2], ['104', 2], ['105', 3]]);
+  assert.deepEqual(spreadUnits([], [9]), [['전체', 9]]);
+  assert.deepEqual(spreadUnits([], [1, 2]), []);
+  const labels = {1: '우정길 1~29', 2: '우정아파트 101', 9: '우정아파트 상가', 20: '우정아파트 120'};
+  assert.deepEqual(placeApartment(labels, '우정아파트', [2, 3], apartmentUnits('101~104'), 36),
+    {1: '우정길 1~29', 2: '우정아파트 101,102', 3: '우정아파트 103,104', 9: '우정아파트 상가', 20: '우정아파트 120'});
+  assert.deepEqual(placeApartment({9: '우정아파트 상가', 20: '우정아파트 120'}, '우정아파트', [2], ['120'], 36), {2: '우정아파트 120', 9: '우정아파트 상가'});
 });

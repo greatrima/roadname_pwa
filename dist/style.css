@@ -199,6 +199,12 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .rack-grid button{min-height:46px;padding:0;border-radius:10px;background:white;border:1px solid #dce1e8;color:#8a94a6;font-weight:500;font-size:16px}
 .rack-grid button.odd{background:#E8EEF8;color:#23407A;border-color:transparent;font-weight:800}
 .rack-grid button.even{background:#E4F2EA;color:#16794C;border-color:transparent;font-weight:800}
+.rack-grid button{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.rack-grid button.picked{background:#0E1B2A;color:white;border-color:transparent;font-weight:800}
+.pick-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pick-chips:empty{display:none}
+.pick-chips button{font-size:14px;padding:6px 12px;border-radius:16px;border:1px solid #dce1e8;background:white;color:#23407A}
+.pick-preview{white-space:pre-line;font-size:15px;line-height:1.6;margin:8px 0 0}
 .rack-grid button.chosen{border:3px solid var(--cell-accent,#23407A);color:var(--cell-accent,#23407A);font-weight:800}
 .cell-editor{margin-top:14px;border-radius:16px;padding:14px;background:var(--tint,#E8EEF8)}
 .cell-editor.odd{--tint:#E8EEF8;--accent:#23407A}

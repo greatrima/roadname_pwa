@@ -178,6 +178,37 @@ export function assignApartment(labels, name, cells, count = Infinity) {
   return Object.fromEntries(Object.entries(out).filter(([, text]) => String(text).trim()));
 }
 
+const MAX_UNITS = 300;
+/** "101~115", "101-105, 107", "101동 102동": the 동 written, in order and each once (as the app's SortingApartments.units). */
+export function apartmentUnits(text) {
+  const out = new Set();
+  for (const m of String(text || '').matchAll(/(\d{1,4})\s*동?(?:\s*[~∼-]\s*(\d{1,4})\s*동?)?/g)) {
+    const from = +m[1], to = m[2] != null ? +m[2] : from, step = to >= from ? 1 : -1;
+    for (let n = from; out.size < MAX_UNITS; n += step) { out.add(String(n)); if (n === to) break; }
+  }
+  return [...out];
+}
+
+/**
+ * `units` spread over `cells` in the rack's order, as evenly as it goes (15 동 over 5 cells, 3 each; the first cells
+ * take the rest); one cell without 동 takes the whole complex. [[동, cell]], as the app's SortingApartments.spread.
+ */
+export function spreadUnits(units, cells) {
+  const ordered = [...new Set(cells)].sort((a, b) => a - b);
+  if (!ordered.length) return [];
+  if (!units.length) return ordered.length === 1 ? [[WHOLE, ordered[0]]] : [];
+  const base = Math.floor(units.length / ordered.length), extra = units.length % ordered.length;
+  let next = 0;
+  return ordered.flatMap((cell, i) => { const take = base + (i < extra ? 1 : 0); const part = units.slice(next, next + take); next += take; return part.map(u => [u, cell]); });
+}
+
+/** "아파트 지정" on dragged cells: the 동 spread over them, replacing what the labels said there or for those 동. */
+export function placeApartment(labels, name, cells, units, count = Infinity) {
+  const placed = spreadUnits(units, cells), moved = new Set(placed.map(p => p[0]));
+  const kept = apartmentCells(labels, name).filter(([unit, cell]) => !cells.includes(cell) && !moved.has(unit));
+  return assignApartment(labels, name, [...kept, ...placed], count);
+}
+
 export function describeApartment(a) {
   if (a.shops) return `${a.name} 상가`;
   if (!a.units.length) return `${a.name} 전체`;

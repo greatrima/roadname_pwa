@@ -6,37 +6,17 @@ import {
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
 import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from './local-address.mjs';
-import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
+import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, apartmentUnits, spreadUnits, placeApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
 import {visibleRecent, addRecent} from './recent-address.mjs';
 import {regionLine} from './region-label.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.1.1';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
-### 개선점
-**메인 화면 새 디자인**
-- 헤더에 로고와 기본 지역 표시
-- 카메라 화면 정리
-
-**설정 정리**
-- 아이콘 디자인 통일
-- 업데이트·제작자·공유·버전을 "앱 정보"로 합침
-- 변환 진동·소리를 "변환 알림"으로 묶음
-- 인식 보조 설명 간단하게
-
-**속도·안정성**
-- 저사양 폰에서 인식 간격을 늘려 발열·배터리 소모 감소
-
 ### 고친 점
-- 업데이트 직후 하얀 화면이 뜰 수 있던 문제
-- 업데이트마다 오프라인 준비를 다시 받던 문제
-- 인식 오류 뒤 실시간 인식이 멈추던 문제
-- 지역을 빠르게 바꾸면 다른 지역 자료가 받아지던 문제
-
-### 빠진 기능
-- 화면 정지·영역 선택
+- 잔버그 수정
 `;
 $('appVersion').textContent = APP_VERSION; $('webVersion').textContent = APP_VERSION;
 const photo = $('photo'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -153,8 +133,19 @@ function saveRegion() {
   store.set(KEYS.localities, localities.length ? JSON.stringify(localities) : '');
   showRegion(); tracker.clear(); autoPolicy.reset();
 }
-/** The header's region line ("전남광주 우정시 통상면"); without room the 시·도 is left out. */
+/**
+ * The header's region line ("전남광주 우정시 통상면"); without room the 시·도 is left out. While sorting it names the
+ * rack in use instead ("통상구: 내 구역") and opens the saved racks.
+ */
 function showRegion() {
+  const sorting = sortingState();
+  if (sorting.enabled) {
+    const rack = sorting.racks.find(r => r.id === sorting.active) || sorting.racks[0], title = rack ? rackTitle(rack) : '구분대 설정';
+    $('regionName').textContent = title;
+    $('regionButton').setAttribute('aria-label', `구분대 ${title}, 구분대 목록`);
+    if ($('regionValue')) settingsValues();
+    return;
+  }
   const region = currentRegion(), name = $('regionName'), line = regionLine(region);
   name.textContent = line || '지역 설정 하기';
   $('regionButton').setAttribute('aria-label', line ? `지역 ${regionName(region)}, 지역 설정` : '지역 설정 하기');
@@ -975,7 +966,7 @@ function openSettings(page = 'main') {
 for (const button of document.querySelectorAll('#settingsDialog [data-open]')) button.onclick = () => showSettingsPage(button.dataset.open);
 $('settingsBack').onclick = () => showSettingsPage(settingsBackTo);
 $('settingsDialog').addEventListener('cancel', e => { if (settingsPage !== 'main' && settingsPage !== 'assign') { e.preventDefault(); showSettingsPage(settingsBackTo); } });
-$('settingsButton').onclick = () => openSettings(); $('regionButton').onclick = () => openSettings('region'); $('closeSettings').onclick = () => $('settingsDialog').close();
+$('settingsButton').onclick = () => openSettings(); $('regionButton').onclick = () => openSettings(sortingOn() ? 'racks' : 'region'); $('closeSettings').onclick = () => $('settingsDialog').close();
 $('regionProvince').onchange = () => { renderCities(); saveRegion(); };
 $('regionCity').onchange = () => { renderGus(); saveRegion(); };
 $('regionGu').onchange = () => { renderLocalities(); saveRegion(); };
@@ -1079,6 +1070,8 @@ function sortingState() {
   } catch { return {enabled: false, active: null, changeSound: false, racks: []}; }
 }
 const saveSorting = state => store.set(KEYS.sorting, JSON.stringify(state));
+/** "통상구: 내 구역": the 시·군·구 the rack was made in, then its name. */
+function rackTitle(rack) { return rack.district ? `${rack.district}: ${rack.name}` : rack.name; }
 const sortingOn = () => sortingState().enabled;
 const activeRack = (state = sortingState()) => state.racks.find(r => r.id === state.active) || state.racks[0] || null;
 function changeRack(id, change) { const state = sortingState(), rack = state.racks.find(r => r.id === id); if (rack) { change(rack); saveSorting(state); } }
@@ -1087,7 +1080,7 @@ function addRack(name, from = {}) {
   const state = sortingState(), base = String(name || '').trim() || `구분대 ${state.racks.length + 1}`;
   let unique = base;
   for (let n = 2; state.racks.some(r => r.name === unique); n++) unique = `${base} (${n})`;
-  const rack = {columns: 0, rows: 0, labels: {}, priority: PRIORITY.ROAD, outside: null, ...from, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: unique};
+  const rack = {columns: 0, rows: 0, labels: {}, priority: PRIORITY.ROAD, outside: null, ...from, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: unique, district: currentRegion().district || ''};
   state.racks.push(rack); state.active = rack.id; saveSorting(state);
   return rack;
 }
@@ -1107,6 +1100,7 @@ function cellText(cell, tail = '') {
 function showSorting(fresh = false) {
   const card = $('sortingCard'), cell = $('sortingCell'), assign = $('sortingAssign'), state = sortingState(), r = shownResult;
   $('appTitle').textContent = state.enabled ? '순로구분' : '도로명변환기';
+  showRegion();
   if (!state.enabled || !r) { card.className = ''; cell.hidden = true; assign.hidden = true; return false; }
   const rack = activeRack(state);
   const verdict = rack ? locate(rack, roadForm(r), parcelForm(r), `${lastOcr?.text || ''}\n${$('addressInput').value}`) : {state: 'notConfigured'};
@@ -1142,7 +1136,7 @@ $('sortingAssign').onclick = () => {
 function sortingValues() {
   const state = sortingState(), rack = activeRack(state);
   $('sortingModeToggle').checked = state.enabled;
-  $('rackValue').textContent = rack ? `${rack.name}${configured(rack) ? ` · ${rack.columns}×${rack.rows}` : ''}` : '설정 안 됨';
+  $('rackValue').textContent = rack ? `${rackTitle(rack)}${configured(rack) ? ` · ${rack.columns}×${rack.rows}` : ''}` : '설정 안 됨';
   $('rackListValue').textContent = `${state.racks.length}개`;
   $('sortingPriority').value = rack?.priority || PRIORITY.ROAD;
   $('sortingOutside').value = rack?.outside || '';
@@ -1183,10 +1177,10 @@ function renderRackList() {
     row.className = 'rack-row';
     pick.className = `rack-pick${rack === active ? ' active' : ''}`;
     pick.setAttribute('aria-pressed', String(rack === active));
-    pick.append(rack.name, Object.assign(document.createElement('small'), {textContent: configured(rack) ? `${rack.columns}×${rack.rows} · ${filledCount(rack)}칸` : '크기 설정 전'}));
+    pick.append(rackTitle(rack), Object.assign(document.createElement('small'), {textContent: configured(rack) ? `${rack.columns}×${rack.rows} · ${filledCount(rack)}칸` : '크기 설정 전'}));
     pick.onclick = () => { const s2 = sortingState(); s2.active = rack.id; saveSorting(s2); renderRackList(); showSorting(); };
     edit.className = 'secondary'; edit.textContent = '편집';
-    edit.setAttribute('aria-label', `${rack.name} 편집`);
+    edit.setAttribute('aria-label', `${rackTitle(rack)} 편집`);
     edit.onclick = () => { editingRack = rack.id; showSettingsPage('rack'); };
     row.append(pick, edit);
     return row;
@@ -1199,7 +1193,7 @@ const rackInEdit = () => sortingState().racks.find(r => r.id === editingRack) ||
 function renderRack(load) {
   const rack = rackInEdit();
   if (!rack) { showSettingsPage('racks'); return; }
-  $('settingsTitle').textContent = rack.name;
+  $('settingsTitle').textContent = rackTitle(rack);
   if (load) {
     $('rackName').value = rack.name; rackResizing = false; rackGuideOpen = null; editingCell = 1;
     $('rackColumns').value = rack.columns || ''; $('rackRows').value = rack.rows || '';
@@ -1272,7 +1266,7 @@ $('rackApply').onclick = () => {
 $('rackName').onchange = () => {
   const name = $('rackName').value.trim();
   if (name) changeRack(editingRack, r => { r.name = name; });
-  $('settingsTitle').textContent = rackInEdit()?.name || ''; showSorting();
+  $('settingsTitle').textContent = rackInEdit() ? rackTitle(rackInEdit()) : ''; showSorting();
 };
 $('exportRack').onclick = async () => {
   saveCell();
@@ -1287,7 +1281,7 @@ $('exportRack').onclick = async () => {
 };
 $('deleteRack').onclick = () => {
   const rack = rackInEdit();
-  if (!rack || !confirm(`${rack.name}을(를) 지울까요?`)) return;
+  if (!rack || !confirm(`${rackTitle(rack)}을(를) 지울까요?`)) return;
   const state = sortingState();
   state.racks = state.racks.filter(r => r.id !== rack.id);
   if (state.active === rack.id) state.active = state.racks[0]?.id || null;
@@ -1304,6 +1298,78 @@ $('importConfirm').onclick = () => {
   addRack(read.rack.name, read.rack);
   showSorting(); showSettingsPage('racks');
 };
+// ---- "아파트 지정": a long press then a drag over the rack's cells picks several; the apartment's 동 are spread over them ----
+let pickTimer = null, picking = null, pickFrom = null, pickCells = [], swallowClick = false;
+const rackGridCell = (x, y) => { const b = document.elementFromPoint(x, y)?.closest('#rackGrid button'); return b ? [...$('rackGrid').children].indexOf(b) + 1 : 0; };
+const paintPicked = () => [...$('rackGrid').children].forEach((b, i) => b.classList.toggle('picked', !!picking?.has(i + 1)));
+function pickDown(x, y) {
+  const cell = rackGridCell(x, y);
+  if (!cell) return;
+  pickFrom = {x, y}; clearTimeout(pickTimer);
+  pickTimer = setTimeout(() => { picking = new Set([cell]); navigator.vibrate?.(20); paintPicked(); }, 450);
+}
+function pickMove(x, y, e) {
+  if (picking) { e.preventDefault(); const cell = rackGridCell(x, y); if (cell && !picking.has(cell)) { picking.add(cell); paintPicked(); } }
+  else if (pickFrom && Math.hypot(x - pickFrom.x, y - pickFrom.y) > 10) { clearTimeout(pickTimer); pickFrom = null; }
+}
+function pickUp(e) {
+  clearTimeout(pickTimer); pickFrom = null;
+  if (!picking) return;
+  e?.preventDefault();
+  const cells = [...picking].sort((a, b) => a - b);
+  picking = null; paintPicked(); swallowClick = true; setTimeout(() => { swallowClick = false; }, 400);
+  openPick(cells);
+}
+function pickCancel() { clearTimeout(pickTimer); pickFrom = null; picking = null; paintPicked(); }
+{
+  const grid = $('rackGrid');
+  grid.addEventListener('touchstart', e => pickDown(e.touches[0].clientX, e.touches[0].clientY), {passive: true});
+  grid.addEventListener('touchmove', e => pickMove(e.touches[0].clientX, e.touches[0].clientY, e), {passive: false});
+  grid.addEventListener('touchend', pickUp);
+  grid.addEventListener('touchcancel', pickCancel);
+  grid.addEventListener('mousedown', e => { if (e.button === 0) pickDown(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', e => { if (pickFrom || picking) pickMove(e.clientX, e.clientY, e); });
+  window.addEventListener('mouseup', e => { if (pickFrom || picking) pickUp(e); });
+  grid.addEventListener('contextmenu', e => e.preventDefault());
+  grid.addEventListener('click', e => { if (swallowClick) { e.stopPropagation(); e.preventDefault(); swallowClick = false; } }, true);
+}
+function openPick(cells) {
+  saveCell();
+  pickCells = cells;
+  $('pickName').value = ''; $('pickMain').value = ''; $('pickUnits').value = ''; $('pickMessage').textContent = '';
+  showSettingsPage('pick');
+  $('pickCells').textContent = `${cells.join('·')}칸`;
+  $('pickChips').replaceChildren(...(rackInEdit()?.apartments || []).map(a => {
+    const chip = Object.assign(document.createElement('button'), {type: 'button', textContent: a.name});
+    chip.onclick = () => { $('pickName').value = a.name; renderPick(); };
+    return chip;
+  }));
+  renderPick();
+}
+const pickKnown = () => (rackInEdit()?.apartments || []).find(a => a.name === $('pickName').value.trim());
+function renderPick() {
+  const name = $('pickName').value.trim();
+  $('pickMainGroup').hidden = !name || !!pickKnown();
+  const byCell = new Map();
+  for (const [unit, cell] of spreadUnits(apartmentUnits($('pickUnits').value), pickCells)) byCell.set(cell, [...(byCell.get(cell) || []), unit]);
+  $('pickPreview').textContent = [...byCell].map(([cell, list]) => list[0] === '전체' ? `${cell}칸 ${name} 전체` : `${cell}칸 ${list.join('·')}`).join('\n');
+}
+for (const id of ['pickName', 'pickUnits']) $(id).oninput = () => { $('pickMessage').textContent = ''; renderPick(); };
+$('pickSave').onclick = () => {
+  const rack = rackInEdit(), name = $('pickName').value.trim(), main = $('pickMain').value.trim(), unitList = apartmentUnits($('pickUnits').value);
+  if (!rack) return;
+  const problem = !name ? '아파트 이름을 적어 주세요' : !pickKnown() && !main ? '새 아파트는 본주소가 필요해요' : !unitList.length && pickCells.length > 1 ? '여러 칸에는 동을 적어 주세요' : '';
+  if (problem) { $('pickMessage').textContent = problem; return; }
+  const known = !!pickKnown();
+  changeRack(rack.id, r => {
+    if (!known) r.apartments = [...(r.apartments || []), {name, main, shops: ''}];
+    r.labels = placeApartment(r.labels, name, pickCells, unitList, cellCount(r));
+  });
+  const keep = editingCell;
+  showSettingsPage('rack'); editingCell = keep; renderRack(false); showSorting();
+  $('cellMessage').textContent = `${name} 지정했습니다`;
+};
+
 function renderAssign() {
   const rack = activeRack();
   $('assignPiece').textContent = assignPieceText || '';
@@ -1470,7 +1536,7 @@ Promise.resolve(navigator.permissions?.query?.({name: 'camera'})).catch(() => nu
 
 // ---- offline readiness (required files only; Tesseract is cached when first used) ----
 // The service worker's own cache name (sw.js), so files prepared here are the ones it serves.
-const CACHE = 'roadname-assets-v37'; let swReady = null, cacheReady = false, updateReady = false;
+const CACHE = 'roadname-assets-v38'; let swReady = null, cacheReady = false, updateReady = false;
 const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 if ('serviceWorker' in navigator) swReady = navigator.serviceWorker.register('./sw.js').then(() => Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))])).catch(() => { $('cacheMessage').textContent = '오프라인 준비를 사용할 수 없습니다. 온라인 인식은 가능합니다.'; return null; });
 async function cacheFiles() { const res = await fetch('./cache-list.json'); if (!res.ok) throw new Error('파일 목록을 읽을 수 없습니다.'); return res.json(); }
