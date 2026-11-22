@@ -855,6 +855,12 @@ export function englishPlaces(roads, localities) {
 }
 
 /** The English as written, "동·호 확인" first when the 동·호 may be wrong: a line cut short never hides it. */
+/** Whether `address` is what an English address was read as (`place`: its road or place and number, no spaces). */
+export const readInEnglish = (place, address) => place.length >= 3 && String(address || '').replace(/\s/g, '').includes(place);
+
+/** An address read in English (EMS) is shown in both forms. */
+export const bothForms = (road, parcel) => [['도로명', road], ['지번', parcel]];
+
 export const englishSourceText = read => (read.unitUnsure ? `동·호 확인 · ${read.english}` : read.english);
 
 /** {korean, english, unitUnsure} for an address in English, or null; `places` from englishPlaces. */

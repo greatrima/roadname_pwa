@@ -2,7 +2,7 @@
 // Run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {romanize, romanizeWord, looksEnglish, englishAddress, englishPlaces, englishSourceText} from '../dist/address-core.mjs';
+import {romanize, romanizeWord, looksEnglish, englishAddress, englishPlaces, englishSourceText, bothForms, readInEnglish} from '../dist/address-core.mjs';
 
 const places = englishPlaces(['우정공원로', '우정로', '우정대로', '우정로12번길', '집배동로', '집배동로228길', '우편안길', '우편1길', '올림픽로'], ['집배동', '통상동']);
 const read = text => englishAddress(text, '통상구', places);
@@ -65,4 +65,11 @@ test('english: Korean or unknown text is left to the usual reading', () => {
 test('english: "동·호 확인" comes first, so a long line cut short never hides it', () => {
   assert.equal(englishSourceText({english: '12 Ujeong-ro, Tongsang-gu', unitUnsure: true}), '동·호 확인 · 12 Ujeong-ro, Tongsang-gu');
   assert.equal(englishSourceText({english: '12 Ujeong-ro', unitUnsure: false}), '12 Ujeong-ro');
+});
+
+test('english: a result read in English is shown in both forms, 도로명 then 지번', () => {
+  assert.deepEqual(bothForms('통상구 우정로 12', '통상구 집배동 34'), [['도로명', '통상구 우정로 12'], ['지번', '통상구 집배동 34']]);
+  assert.equal(readInEnglish('우정로12', '우정특별시 통상구 우정로 12'), true);
+  assert.equal(readInEnglish('우정로12', '우정특별시 통상구 별골로 1'), false);
+  assert.equal(readInEnglish('', '우정로 12'), false);
 });

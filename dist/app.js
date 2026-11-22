@@ -2,7 +2,7 @@ import {
   COMPLETE, Kind, candidate as makeCandidate, extract, extractCandidate, extractDetails, parseParts, identity,
   restoreStructuredText, parseRegion, regionName, withDefaultRegion, candidatesFromBlocks, candidatesFromSpatialBlocks,
   automaticCandidate, assembleElements, rowsFromBoxes, CandidateTracker, AutoConversionPolicy, isSameAddressFamily,
-  LABEL_LETTER, looksEnglish, englishSourceText,
+  LABEL_LETTER, looksEnglish, englishSourceText, readInEnglish, bothForms,
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
@@ -188,6 +188,14 @@ function setConverted(text, tone = '') {
   main.className = 'converted-name'; main.textContent = text.slice(start);
   view.replaceChildren(region, main);
 }
+/** "도로명 …" and "지번 …" on two lines for an address read in English, the words small. */
+function showBothForms(road, parcel) {
+  $('convertedText').replaceChildren(...bothForms(road, parcel).map(([label, address]) => {
+    const line = document.createElement('span'); line.className = 'both-form';
+    line.append(Object.assign(document.createElement('small'), {textContent: `${label} `}), address);
+    return line;
+  }));
+}
 function resetResult() { setMapAddress(null); setConverted(WAITING_RESULT); }
 function setConverting(value) { converting = value; $('convertButton').disabled = value || busy || cacheBusy; }
 const offlineStatus = () => '오프라인 · 주소 인식과 후보 선택은 사용할 수 있습니다.';
@@ -299,6 +307,7 @@ function showSuccess(r) {
   const rack = sortingOn() ? activeRack() : null, shown = rack ? preferredForm(r, rack) : r.convertedAddress;
   awaitingNetwork = false; setMapAddress(shown); diag.finish('완료', r.convertedAddress);
   setConverted(shown, 'success');
+  if (englishRead && (readInEnglish(englishPlace, r.recognizedAddress) || readInEnglish(englishPlace, r.convertedAddress))) showBothForms(roadForm(r), parcelForm(r));
   setStatus(`${SOURCE_LABEL[r.source]}에서 확인된 주소입니다.`);
   shownResult = r; cellSeenAt = null; showNote();
   noteDistrict(r);
@@ -401,7 +410,7 @@ async function labelFree(texts) {
 let englishRead = null, englishPlace = '';
 /** A small line with the English as written while `address` is what it was read as; hidden otherwise. */
 function showEnglishSource(address) {
-  const shown = !!englishRead && englishPlace.length >= 3 && (address || '').replace(/\s/g, '').includes(englishPlace);
+  const shown = !!englishRead && readInEnglish(englishPlace, address);
   $('englishSource').hidden = !shown;
   if (shown) $('englishSource').textContent = englishSourceText(englishRead);
 }
