@@ -51,7 +51,8 @@ export class Bucket {
   }
   *names(kind, targetSuffix, minimumLength, maximumLength) {
     if (kind === Kind.ROAD) this.roadIndex ??= nameIndex(this.roads.keys());
-    else this.localityIndex ??= nameIndex(this.localities);
+    // A 리 is kept with its 읍·면 ('어쩌면 어쩌리') and read without it: both are found (as on Android).
+    else this.localityIndex ??= nameIndex([...this.localities, ...[...this.localities].filter(l => l.includes(' ')).map(l => l.slice(l.lastIndexOf(' ') + 1))]);
     const index = kind === Kind.ROAD ? this.roadIndex : this.localityIndex;
     for (let length = minimumLength; length <= maximumLength; length++) yield* index.get(`${targetSuffix}|${length}`) || [];
   }
@@ -75,7 +76,7 @@ export class AddressDictionary {
         for (const [district, bucket] of districts) {
           names.add(district.replace(/ /g, ''));
           for (const part of district.split(' ')) names.add(part);
-          for (const locality of bucket.localities) names.add(locality);
+          for (const locality of bucket.localities) { names.add(locality); for (const part of locality.split(' ')) names.add(part); }
           for (const road of bucket.roads.keys()) names.add(road);
         }
       }
@@ -249,9 +250,15 @@ export class AddressCandidateEngine {
 
   candidate(raw, region = {}) { return extractCandidates(raw).flatMap(c => this.correct(c, region))[0] || null; }
 
-  correct(candidate, region = {}) {
-    const dictionary = this.dictionary, parts = parseParts(candidate.text);
-    if (!parts) return [candidate];
+  correct(found, region = {}) {
+    const dictionary = this.dictionary, read = parseParts(found.text);
+    if (!read) return [found];
+    // A word ending in 시/군/구 that is no 시·군·구 at all ('김민구', a name above the address) is not a region.
+    const known = read.prefix.filter(t => isProvinceToken(t) || !isDistrictToken(t) || dictionary.correctDistrict(t, null) != null);
+    const same = known.length === read.prefix.length;
+    const number = read.number != null ? `${read.mountain ? '산 ' : ''}${read.number}` : null;
+    const candidate = same ? found : {...found, text: [...known, read.name, ...(number != null ? [number] : [])].join(' ')};
+    const parts = same ? read : {...read, prefix: known};
     const explicitProvinceToken = parts.prefix.find(isProvinceToken) ?? null;
     const explicitProvince = explicitProvinceToken ? dictionary.correctProvince(explicitProvinceToken) : null;
     const districtToken = [...parts.prefix].reverse().find(isDistrictToken) ?? null;

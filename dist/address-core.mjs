@@ -18,10 +18,12 @@ const LOCALITY_SUFFIX = '(?:읍|면|동|가|리)';
 const ROAD_SUFFIX = '(?:대로|로|길)';
 const NUMBER = '\\d{1,5}(?:\\s*-\\s*\\d{1,5})?';
 const PREFIX = `(?:[가-힣0-9]+(?:${PROVINCE_SUFFIX}|${DISTRICT_SUFFIX}|읍|면)\\s+)*`;
-const NO_TAIL = '(?!\\d|\\s*(?:-|동|층|호))';
+// A building name that only starts with 동/층/호 ('동아아파트', '호반베르디움') is no unit (as on Android).
+const UNIT_AFTER = '(?:-|(?:동|층|호)(?![가-힣]))';
+const NO_TAIL = `(?!\\d|\\s*${UNIT_AFTER})`;
 // A base number is never followed by the rest of a numbered road/legal-dong name ('헤움로 12길', '결수대로 123번길',
 // '울지로3가'): otherwise '헤움로 12길 34' would be cut to the different real address '헤움로 12' (as on Android).
-const NUMBER_END = '(?!\\d|\\s*(?:-|동|층|호)|\\s*번?길(?![가-힣])|\\s*가(?![가-힣]))';
+const NUMBER_END = `(?!\\d|\\s*${UNIT_AFTER}|\\s*번?[가-힣]?길(?![가-힣])|\\s*가(?![가-힣]))`;
 
 const parcelSource = `${PREFIX}([가-힣][가-힣0-9]*${LOCALITY_SUFFIX})\\s*(산\\s*)?(${NUMBER})(?:\\s*번지)?${NUMBER_END}`;
 const roadSource = `${PREFIX}([가-힣0-9]+${ROAD_SUFFIX})\\s*(${NUMBER})${NUMBER_END}`;
@@ -57,21 +59,33 @@ const provinceAliases = new Map([['서울', '서울특별시'], ['부산', '부�
   ['광주', '광주광역시'], ['대전', '대전광역시'], ['울산', '울산광역시'], ['세종', '세종특별자치시'], ['경기', '경기도'],
   ['강원', '강원특별자치도'], ['강원도', '강원특별자치도'], ['충북', '충청북도'], ['충남', '충청남도'], ['전북', '전북특별자치도'],
   ['전라북도', '전북특별자치도'], ['전남', '전라남도'], ['경북', '경상북도'], ['경남', '경상남도'], ['제주', '제주특별자치도'],
-  ['제주도', '제주특별자치도']]);
+  ['제주도', '제주특별자치도'],
+  // "서울시" for 서울특별시. Not 광주시: 경기도 광주시 is a city of its own (see sameRegion).
+  ['서울시', '서울특별시'], ['부산시', '부산광역시'], ['대구시', '대구광역시'], ['인천시', '인천광역시'], ['대전시', '대전광역시'],
+  ['울산시', '울산광역시'], ['세종시', '세종특별자치시']]);
+/** `written` names `actual`: the same, or "광주시" for 광주광역시 (and still 경기도 광주시 itself). */
+const sameRegion = (written, actual) => written === actual ||
+  (written.endsWith('시') && /(?:광역시|특별시|특별자치시)$/.test(actual) && actual.startsWith(written.slice(0, -1)));
 const aliasTokens = new RegExp(`(^|\\s)(${[...provinceAliases.keys()].map(escape).join('|')})(?=\\s|$)`, 'g');
 const canonicalRegion = value => provinceAliases.get(value) || value;
 export const normalizeRegions = text => text.replace(aliasTokens, (_, before, token) => before + canonicalRegion(token));
 
 // ---- AddressTextParser ----
 // OCR/typing often separates a numbered road or '로N가' legal dong from its base name ('헤움로 12 길 34').
+// Also '새별로 20가길', '새별로 3안길' and '별수동 1가 12'.
 const joinSpacedNames = text => text
-  .replace(/([가-힣](?:대로|로))[ \t]+(\d{1,4})[ \t]*(번길|길)(?![가-힣])/g, '$1$2$3')
-  .replace(/([가-힣]로)[ \t]+(\d{1,2})[ \t]*가(?=[ \t]*(?:산[ \t]*)?\d)/g, '$1$2가');
+  .replace(/([가-힣](?:대로|로))[ \t]+(\d{1,4})[ \t]*(번?[가-힣]?길)(?![가-힣])/g, '$1$2$3')
+  .replace(/([가-힣](?:로|동))[ \t]+(\d{1,2})[ \t]*가(?=[ \t]*(?:산[ \t]*)?\d)/g, '$1$2가');
+// '성명: 홍가람 / 주소: 가람로 25': a field name later on a line starts a line of its own.
+const LATER_FIELD = /(?:[ \t]*[/|][ \t]*|[ \t]+)(?=(?:성명|이름|받는[ \t]*분|받는[ \t]*사람|수취인|보내는[ \t]*분|전화|휴대폰|연락처|(?:지번|도로명)?[ \t]*주소)(?:[ \t]*[:：]|[ \t]))/g;
 
 function normalizeOcrText(raw) {
   return joinSpacedNames(normalizeRegions(raw)
+    .replace(LATER_FIELD, '\n')
+    // '가람동 12번지 3호': the old way of writing 12-3 (a room is written with more digits).
+    .replace(/(\d{1,5})\s*번지\s*(\d{1,2})\s*호(?![가-힣0-9])/g, '$1-$2')
     .replace(DASHES, '-')
-    .replace(/(지번|도로명)?\s*주소\s*[:：]?/gi, ' ')
+    .replace(/(지번|도로명)?[ \t]*주소[ \t]*[:：]?/gi, ' ')
     .replace(/[|,_·•]/g, ' ')
     .replace(/（/g, '(')
     .replace(/）/g, ')'));
@@ -81,7 +95,7 @@ function format(value) {
   return joinSpacedNames(value
     .replace(/\s*-\s*/g, '-')
     .replace(/\s+/g, ' '))
-    .replace(/(읍|면|동|가|리)(?=(?:산)?\d)/g, '$1 ')
+    .replace(/(읍|면|동|가|리)(?=(?:산)?\d)(?!\d{1,2}가)/g, '$1 ') // not inside '별수동1가'
     .replace(/산(?=\d)/g, '산 ')
     .replace(/\s*번지$/, '')
     .trim();
@@ -204,6 +218,9 @@ export function repairRoadAcrossSamples(left, right) {
   // A complete-looking road word is not a continuation; split pieces look like '동로' or '로12길'.
   const fragment = continuation[1];
   if (fragment.length > 4 && !fragment.startsWith('로')) return null;
+  // '가람로' is a whole road of its own: a word on the line above ('홍가람') is not its beginning.
+  const stem = fragment.replace(/(?:대로|로|길)$/, '').replace(/\d/g, '');
+  if ([...stem].filter(c => c >= '가' && c <= '힣').length >= 2) return null;
   return `${normalizedLeft}${fragment} ${continuation[2]}` + right.slice(continuation.index + continuation[0].length);
 }
 
@@ -346,7 +363,7 @@ export function exactMatch(query, returnedAddress) {
   const actualPath = actual.prefix.map(canonicalRegion);
   for (const token of wanted.prefix.map(canonicalRegion)) {
     let index = -1;
-    for (let i = position; i < actualPath.length; i++) if (actualPath[i] === token) { index = i; break; }
+    for (let i = position; i < actualPath.length; i++) if (sameRegion(token, actualPath[i])) { index = i; break; }
     if (index < 0) return false;
     position = index + 1;
   }
@@ -613,15 +630,22 @@ export class CandidateTracker {
     if (this.frozen) return this.visible;
     if (!incoming.length) return nowMs - this.lastNonEmptyAt <= this.emptyGraceMs ? this.visible : [];
     this.lastNonEmptyAt = nowMs;
+    this.frame++;
+    for (const c of incoming) this.seenAt.set(identity(c), this.frame);
     if (!this.visible.length) { this.visible = incoming; return this.visible; }
     if (incoming.some(c => isSameAddressFamily(c, this.visible[0]))) {
       this.visible = this.mergeStable(this.visible, incoming); this.pendingSignature = null; this.pendingCount = 0;
       return this.visible;
     }
-    const signature = incoming.map(identity).join('|');
+    // Another slip: its first address read the same a few frames running replaces the last one, whatever else
+    // each frame also reads (as on Android).
+    const signature = identity(incoming[0]);
     if (signature === this.pendingSignature) this.pendingCount++;
     else { this.pendingSignature = signature; this.pendingCount = 1; }
-    if (this.pendingCount >= this.replaceAfterFrames) { this.visible = incoming; this.pendingSignature = null; this.pendingCount = 0; }
+    if (this.pendingCount >= this.replaceAfterFrames) {
+      this.visible = incoming.filter(c => isSameAddressFamily(c, incoming[0]) || this.seenAt.get(identity(c)) === this.frame);
+      this.pendingSignature = null; this.pendingCount = 0;
+    }
     return this.visible;
   }
   freeze(selected, alternatives = this.visible) {
@@ -631,7 +655,7 @@ export class CandidateTracker {
     return selected;
   }
   unfreeze(keepVisible = false) { this.frozen = false; this.pendingSignature = null; this.pendingCount = 0; if (!keepVisible) this.visible = []; }
-  clear() { this.frozen = false; this.visible = []; this.pendingSignature = null; this.pendingCount = 0; this.lastNonEmptyAt = 0; }
+  clear() { this.frozen = false; this.visible = []; this.pendingSignature = null; this.pendingCount = 0; this.lastNonEmptyAt = 0; this.frame = 0; this.seenAt = new Map(); }
   mergeStable(old, newer) {
     const result = old.slice();
     for (const c of newer) {
@@ -641,8 +665,10 @@ export class CandidateTracker {
         if (completenessRank(c) > completenessRank(existing) || c.confidence > existing.confidence || (!existing.details && c.details)) result[index] = c;
       } else result.push(c);
     }
+    // A misread seen once leaves when it has not been read again for a few frames; the first one stays.
     const seen = new Set();
-    return result.filter(c => { const k = identity(c); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5);
+    return result.filter((c, i) => i === 0 || this.frame - (this.seenAt.get(identity(c)) ?? this.frame) < 3)
+      .filter(c => { const k = identity(c); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5);
   }
 }
 
