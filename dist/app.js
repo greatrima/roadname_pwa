@@ -2,6 +2,7 @@ import {
   COMPLETE, Kind, candidate as makeCandidate, extract, extractCandidate, extractDetails, parseParts, identity,
   restoreStructuredText, parseRegion, regionName, withDefaultRegion, candidatesFromBlocks, candidatesFromSpatialBlocks,
   automaticCandidate, assembleElements, rowsFromBoxes, CandidateTracker, AutoConversionPolicy, isSameAddressFamily,
+  LABEL_LETTER,
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
@@ -383,7 +384,7 @@ function showLocalResult(offline, message = '') {
 
 /** "받는분" printed vertically glues its letters to the address lines; needs the loaded dictionary to tell real names. */
 async function labelFree(texts) {
-  if (!dictionaryVersion || !texts.some(text => /[받는분보내사람]/.test(text))) return texts;
+  if (!dictionaryVersion || !texts.some(text => LABEL_LETTER.test(text))) return texts;
   return dictionaryCall('clean', {texts}).catch(() => texts);
 }
 async function candidatesFromResult(result, region) {

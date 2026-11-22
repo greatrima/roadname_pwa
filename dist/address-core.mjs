@@ -88,23 +88,58 @@ function format(value) {
 }
 
 // ---- AddressLabels ----
-// Postal-slip labels ('받는분', '보내는 사람') printed vertically are read one letter glued to each address line
-// ('받서울특별시', '는집배로 2길 18', '분101동'). A leading label is taken off a word only when the word is no real
-// name and what remains is one (or a unit such as '101동'), so a real name starting with these letters stays.
-const LABELS = ['보내는사람', '받는사람', '보내는분', '받는분', '보내는', '받는', '사람', '보내', '받', '는', '분', '보', '내', '사', '람'];
+// Postal-slip labels ('받는분', '수취인', '보내는 사람') printed vertically are read one letter glued to each address
+// line ('받서울특별시', '는집배로 2길 18', '분101동'), glued to a number ('받우정동123-4'), on its own ('받 우정동 5')
+// or in front of the rest of a road split over two lines ('집배동로\n는228길'). A label is taken off only when the
+// word is no real name and what remains is one (or a unit such as '101동'), so a real name ('인천', '송파') stays.
+const LABEL_WORDS = [
+  '보내는사람', '받는사람', '받으시는분', '보내시는분', '보내는분', '받는분', '보내는곳', '받는곳', '보내는이', '받는이',
+  '수취인', '수신인', '수신자', '발송인', '발신인', '보낸사람', '보내는', '받는', '받으시는',
+];
+/** The labels and every piece a vertical print splits them into, longest first. */
+const LABELS = [...new Set(LABEL_WORDS.flatMap(label => {
+  const pieces = [];
+  for (let n = 1; n <= label.length; n++) for (let i = 0; i + n <= label.length; i++) pieces.push(label.slice(i, i + n));
+  return pieces;
+}))].sort((a, b) => b.length - a.length);
+/** Any letter a slip label is made of: the cheap gate before the dictionary is asked. */
+export const LABEL_LETTER = new RegExp(`[${[...new Set(LABEL_WORDS.join(''))].join('')}]`);
 const UNIT = /^\d{1,5}(?:동|층|호)$/;
+const ROAD_REST = /^\d{1,4}(?:번길|길)$/;
+const ROAD_END = /^[가-힣0-9]*[가-힣](?:대로|로)$/;
+const HANGUL_HEAD = /^[가-힣]+(?=\d)/;
 /** `text` with leading labels taken off its words, or `text` itself when none was; `isRealName` is an exact lookup. */
 export function stripAddressLabels(text, isRealName) {
   if (!LABELS.some(label => text.includes(label))) return text;
   const known = rest => UNIT.test(rest) || isRealName(rest) || isRealName(normalizeRegions(rest));
-  let changed = false;
-  const result = joinSpacedNames(text).replace(/[가-힣][가-힣0-9]*/g, word => {
-    const label = isRealName(word) ? null : LABELS.find(l => word.length > l.length && word.startsWith(l) && known(word.slice(l.length)));
-    if (!label) return word;
-    changed = true;
-    return word.slice(label.length);
+  // The line before ends with a road name that, with `rest` ('228길'), is one road.
+  const continuesRoad = (before, rest) => {
+    const last = /([가-힣0-9]+)\s*$/.exec(before.trimEnd())?.[1];
+    return !!last && ROAD_END.test(last) && (isRealName(last + rest) || isRealName(last));
+  };
+  const remains = (rest, before) => known(rest) || (HANGUL_HEAD.test(rest) && known(HANGUL_HEAD.exec(rest)[0])) ||
+    (ROAD_REST.test(rest) && continuesRoad(before, rest));
+  const realHead = word => HANGUL_HEAD.test(word) && isRealName(HANGUL_HEAD.exec(word)[0]);
+  const joined = joinSpacedNames(text);
+  const glued = joined.replace(/[가-힣][가-힣0-9]*/g, (word, offset) => {
+    if (isRealName(word) || realHead(word)) return word;
+    const before = joined.slice(0, offset);
+    const label = LABELS.find(l => word.length > l.length && word.startsWith(l) && remains(word.slice(l.length), before));
+    return label ? word.slice(label.length) : word;
   });
-  return changed ? result : text;
+  // A label letter or two read on its own at the start of a line, before a real name: '받 우정동 5'.
+  const lines = glued.split('\n');
+  const result = lines.map((line, index) => {
+    const trimmed = line.trimStart();
+    const space = trimmed.indexOf(' ');
+    if (space < 0) return line;
+    const first = trimmed.slice(0, space), after = trimmed.slice(space).trimStart(), next = after.split(' ')[0];
+    const lone = first.length <= 2 && !LABEL_WORDS.includes(first) && LABELS.includes(first) && !isRealName(first);
+    const before = lines.slice(0, index).join('\n');
+    const follows = !!next && (known(HANGUL_HEAD.exec(next)?.[0] ?? next) || (ROAD_REST.test(next) && continuesRoad(before, next)));
+    return lone && follows ? after : line;
+  }).join('\n');
+  return result === joined ? text : result;
 }
 
 export const normalizeKey = address => address.replace(DASHES, '-').replace(/\s+/g, '').toLowerCase();

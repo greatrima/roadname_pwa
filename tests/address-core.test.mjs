@@ -267,3 +267,23 @@ test('labels: a vertical slip label read glued to the address is taken off (as o
   assert.equal(strip('받는분'), '받는분');
   assert.equal(strip('집배로 2길 18'), '집배로 2길 18');
 });
+
+test('labels: other slip labels, numbers glued on, lone letters and a road split over two lines (as on Android)', () => {
+  const real = new Set(['통상구', '누정동', '달선로', '집배동로', '집배동로228길', '인솔동', '송라2동']);
+  const strip = text => stripAddressLabels(text, name => real.has(name.replace(/\s/g, '')));
+  for (const label of ['받는곳', '곳', '수취인', '수', '취', '인', '수신인', '받으시는분', '으', '시', '발송인', '발', '송', '보내는곳', '받는이']) {
+    assert.equal(strip(`${label}누정동 5`), '누정동 5', label);
+  }
+  assert.equal(strip('받누정동123-4'), '누정동123-4');
+  assert.equal(strip('받달선로50'), '달선로50');
+  assert.equal(strip('받 누정동 5'), '누정동 5');
+  assert.equal(strip('받 통상구 달선로 50\n분 101동 110호'), '통상구 달선로 50\n101동 110호');
+  assert.equal(strip('받통상구 집배동로\n는228길 우정아파트\n분101동 110호'), '통상구 집배동로\n228길 우정아파트\n101동 110호');
+  assert.equal(strip('집배동로\n는 228길 5'), '집배동로\n228길 5');
+  assert.equal(strip('통상구\n는228길'), '통상구\n는228길');
+  // Real names starting with these letters stay.
+  assert.equal(strip('인솔동 5'), '인솔동 5');
+  assert.equal(strip('인솔동12'), '인솔동12');
+  assert.equal(strip('송라2동 5'), '송라2동 5');
+  assert.equal(strip('수 가나다 5'), '수 가나다 5');
+});

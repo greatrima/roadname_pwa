@@ -114,7 +114,10 @@ self.onmessage = async ({data}) => {
     } else if (type === 'clean') {
       // Slip labels read glued to the address lines; the dictionary tells which words are real names.
       await ready();
-      result = (data.texts || []).map(text => stripAddressLabels(text, name => dictionary.isExactAddressName(name)));
+      // Stripped together, so a road split over two lines ('집배동로' / '는228길') is seen whole; lines stay one for one.
+      const texts = data.texts || [];
+      const joined = stripAddressLabels(texts.join('\n'), name => dictionary.isExactAddressName(name)).split('\n');
+      result = joined.length === texts.length ? joined : texts.map(text => stripAddressLabels(text, name => dictionary.isExactAddressName(name)));
     } else if (type === 'update') result = await checkUpdate();
     else throw new Error(`unknown ${type}`);
     postMessage({id, result});
