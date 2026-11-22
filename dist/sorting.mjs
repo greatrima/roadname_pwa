@@ -318,3 +318,13 @@ export function importText(text) {
   }
   return {rack, problems};
 }
+
+/** A letter just read: its cell is the 'first', another than the last letter's ('changed') or the same 'again'. */
+export const cellSignal = (last, cell) => (last == null ? 'first' : last === cell ? 'again' : 'changed');
+
+/**
+ * Continuous scan: a cell whose letter the camera has not seen for this long fades, so a next letter that could not
+ * be read never shows the last one's cell as its own.
+ */
+export const STALE_MS = 1500;
+export const staleCell = (seenAt, now) => now - seenAt > STALE_MS;

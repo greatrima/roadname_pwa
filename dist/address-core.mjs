@@ -854,6 +854,9 @@ export function englishPlaces(roads, localities) {
   };
 }
 
+/** The English as written, "동·호 확인" first when the 동·호 may be wrong: a line cut short never hides it. */
+export const englishSourceText = read => (read.unitUnsure ? `동·호 확인 · ${read.english}` : read.english);
+
 /** {korean, english, unitUnsure} for an address in English, or null; `places` from englishPlaces. */
 export function englishAddress(text, district, places) {
   if (!looksEnglish(text)) return null;

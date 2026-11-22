@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLabel, describe, locate, overlaps, piece, summary, exportText, importText, PRIORITY, parseRackLabel, describeApartment, apartmentCells, assignApartment, apartmentUnits, spreadUnits, placeApartment} from '../dist/sorting.mjs';
+import {parseLabel, describe, locate, overlaps, piece, summary, exportText, importText, PRIORITY, parseRackLabel, describeApartment, apartmentCells, assignApartment, apartmentUnits, spreadUnits, placeApartment, cellSignal, staleCell, STALE_MS} from '../dist/sorting.mjs';
 
 // Invented names only.
 const rack = (labels, extra = {}) => ({name: '내 구역', columns: 6, rows: 6, labels: Object.fromEntries(labels), priority: PRIORITY.ROAD, outside: null, ...extra});
@@ -108,4 +108,15 @@ test('sorting: dragged cells take the 동 of an apartment spread in order (as in
   assert.deepEqual(placeApartment(labels, '우정아파트', [2, 3], apartmentUnits('101~104'), 36),
     {1: '우정길 1~29', 2: '우정아파트 101,102', 3: '우정아파트 103,104', 9: '우정아파트 상가', 20: '우정아파트 120'});
   assert.deepEqual(placeApartment({9: '우정아파트 상가', 20: '우정아파트 120'}, '우정아파트', [2], ['120'], 36), {2: '우정아파트 120', 9: '우정아파트 상가'});
+});
+
+test('sorting: a letter read shows whether its cell changed or is the same again', () => {
+  assert.equal(cellSignal(null, 4), 'first');
+  assert.equal(cellSignal(4, 5), 'changed');
+  assert.equal(cellSignal(4, 4), 'again');
+});
+
+test('sorting: the cell fades once the camera no longer sees its letter', () => {
+  assert.equal(staleCell(1000, 1000 + STALE_MS), false);
+  assert.equal(staleCell(1000, 1001 + STALE_MS), true);
 });

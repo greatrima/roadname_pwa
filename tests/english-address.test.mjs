@@ -2,7 +2,7 @@
 // Run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {romanize, romanizeWord, looksEnglish, englishAddress, englishPlaces} from '../dist/address-core.mjs';
+import {romanize, romanizeWord, looksEnglish, englishAddress, englishPlaces, englishSourceText} from '../dist/address-core.mjs';
 
 const places = englishPlaces(['우정공원로', '우정로', '우정대로', '우정로12번길', '집배동로', '집배동로228길', '우편안길', '우편1길', '올림픽로'], ['집배동', '통상동']);
 const read = text => englishAddress(text, '통상구', places);
@@ -60,4 +60,9 @@ test('english: Korean or unknown text is left to the usual reading', () => {
   assert.equal(looksEnglish('우정특별시 통상구 우정공원로 12'), false);
   assert.equal(korean('Hello world, nice to meet you'), undefined);
   assert.equal(korean('221B Baker Street, London'), undefined);
+});
+
+test('english: "동·호 확인" comes first, so a long line cut short never hides it', () => {
+  assert.equal(englishSourceText({english: '12 Ujeong-ro, Tongsang-gu', unitUnsure: true}), '동·호 확인 · 12 Ujeong-ro, Tongsang-gu');
+  assert.equal(englishSourceText({english: '12 Ujeong-ro', unitUnsure: false}), '12 Ujeong-ro');
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLocal, lookupLocal, buildingByName, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from '../dist/local-address.mjs';
+import {parseLocal, lookupLocal, buildingByName, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries, replaceLocalFiles} from '../dist/local-address.mjs';
 
 // Invented names only, in the format scripts/local-data.py writes.
 const district = [
@@ -99,4 +99,31 @@ test('local data: a city chosen without its 구 takes every 구, and 세종 is f
   assert.deepEqual(codes({province: '경기도', district: '솔내군'}), ['3'], 'not a prefix of another name');
   assert.deepEqual(codes({province: '세종특별자치시', district: '세종특별자치시'}), ['4']);
   assert.deepEqual(codes({province: '강원특별자치도', district: '솔내시'}), []);
+});
+
+// A fake Cache Storage cache: `full` makes put fail the way a full quota does.
+const fakeCache = (names, full = false) => {
+  const files = new Map(names.map(n => [n, 'old']));
+  return {
+    files,
+    keys: async () => [...files.keys()].map(url => ({url: `https://example.invalid/${url.replace('./', '')}`})),
+    delete: async key => files.delete(`./${new URL(key.url).pathname.slice(1)}`),
+    put: async (url, body) => { if (full) throw new Error('QuotaExceededError'); files.set(url, body); },
+  };
+};
+
+test('local: a new district that cannot be stored leaves the one in use (as on Android)', async () => {
+  const cache = fakeCache(['./local/99001.tsv.gz'], true);
+  let recorded = false;
+  await assert.rejects(replaceLocalFiles(cache, [['99002', 'new']], () => { recorded = true; }));
+  assert.equal(recorded, false);
+  assert.deepEqual([...cache.files.keys()], ['./local/99001.tsv.gz']);
+});
+
+test('local: the files no longer used go only after the new ones and their record are in', async () => {
+  const cache = fakeCache(['./local/99001.tsv.gz']);
+  const order = [];
+  await replaceLocalFiles(cache, [['99002', 'new']], () => order.push([...cache.files.keys()].sort().join(',')));
+  assert.deepEqual(order, ['./local/99001.tsv.gz,./local/99002.tsv.gz']);
+  assert.deepEqual([...cache.files.keys()], ['./local/99002.tsv.gz']);
 });

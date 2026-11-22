@@ -2,18 +2,18 @@ import {
   COMPLETE, Kind, candidate as makeCandidate, extract, extractCandidate, extractDetails, parseParts, identity,
   restoreStructuredText, parseRegion, regionName, withDefaultRegion, candidatesFromBlocks, candidatesFromSpatialBlocks,
   automaticCandidate, assembleElements, rowsFromBoxes, CandidateTracker, AutoConversionPolicy, isSameAddressFamily,
-  LABEL_LETTER, looksEnglish,
+  LABEL_LETTER, looksEnglish, englishSourceText,
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
-import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries} from './local-address.mjs';
-import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, apartmentUnits, spreadUnits, placeApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY} from './sorting.mjs';
+import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries, replaceLocalFiles} from './local-address.mjs';
+import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, apartmentUnits, spreadUnits, placeApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY, cellSignal, staleCell} from './sorting.mjs';
 import {visibleRecent, addRecent} from './recent-address.mjs';
 import {regionLine} from './region-label.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.2.3';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
 ### 새 기능
@@ -22,6 +22,9 @@ const WHATS_NEW = `
 ### 고친 점
 - 송장의 받는분·받는곳·수취인·발송인 같은 칸 이름 글자가 주소 앞에 붙어 인식되던 문제 수정
 - 아이폰에서 주소창을 누르면 화면이 어긋나고 입력칸이 찌그러지던 문제 수정
+- 지역 자료를 받다 끊기면 오프라인 변환이 멈추던 문제 수정
+- 순로구분 연속 스캔: 같은 칸이 이어져도 칸 번호가 깜빡여 읽힌 것을 알 수 있고, 다음 송장을 못 읽으면 이전 칸이 흐려짐
+- 영문 주소의 "동·호 확인" 표시가 줄 끝에서 잘리지 않게 앞으로 옮김
 `;
 $('appVersion').textContent = APP_VERSION; $('webVersion').textContent = APP_VERSION;
 const photo = $('photo'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -294,7 +297,7 @@ function showSuccess(r) {
   awaitingNetwork = false; setMapAddress(shown); diag.finish('완료', r.convertedAddress);
   setConverted(shown, 'success');
   setStatus(`${SOURCE_LABEL[r.source]}에서 확인된 주소입니다.`);
-  shownResult = r;
+  shownResult = r; cellSeenAt = null;
   noteDistrict(r);
   saveRecent(addRecent(recentAll(), r, recentLimit(), flag(KEYS.recentMidnight)));
   showRecent();
@@ -397,7 +400,7 @@ let englishRead = null, englishPlace = '';
 function showEnglishSource(address) {
   const shown = !!englishRead && englishPlace.length >= 3 && (address || '').replace(/\s/g, '').includes(englishPlace);
   $('englishSource').hidden = !shown;
-  if (shown) $('englishSource').textContent = englishRead.english + (englishRead.unitUnsure ? ' · 동·호 확인' : '');
+  if (shown) $('englishSource').textContent = englishSourceText(englishRead);
 }
 /** An address written in English, read as the Korean one of the chosen district by the dictionary worker; null otherwise. */
 async function englishFrom(text, region) {
@@ -494,6 +497,7 @@ async function onLiveResult(result, now, gen) {
   if (gen !== scanGeneration || editing) return;
   lastOcr = result; latestRaw = raw;
   diag.observe(result, raw);
+  if (continuousScan()) fadeUnseenCell(raw, now);
   if (!continuousScan() && selected) return;
   const automatic = autoPolicy.update(raw, selected, now);
   if (automatic) {
@@ -1092,7 +1096,7 @@ $('closeWhatsNew').onclick = $('okWhatsNew').onclick = () => $('whatsNewDialog')
 // ---- "순로구분": which rack cell a converted address goes into (대구분). Several racks may be kept (내 구역, a
 // round covered for a colleague), one in use; each is named, exported as text and imported back (the app reads the
 // same text). Same rules as the Android app, in sorting.mjs. Kept in this browser only. ----
-let shownResult = null, lastCell = null, editingRack = null, editingCell = 1, rackResizing = false, rackGuideOpen = null, assignPieceText = null;
+let shownResult = null, lastCell = null, cellSeenAt = null, editingRack = null, editingCell = 1, rackResizing = false, rackGuideOpen = null, assignPieceText = null;
 function sortingState() {
   try {
     const s = JSON.parse(store.get(KEYS.sorting) || '{}');
@@ -1151,11 +1155,24 @@ function showSorting(fresh = false) {
   cell.hidden = false;
   assign.hidden = verdict.state === 'notConfigured' || (verdict.cell && !verdict.outside);
   if (!fresh || !verdict.cell) return false;
-  const changed = lastCell !== null && lastCell !== verdict.cell, turned = lastCell !== verdict.cell;
+  const signal = cellSignal(lastCell, verdict.cell);
   lastCell = verdict.cell;
-  cell.classList.remove('pulse'); void cell.offsetWidth; cell.classList.add('pulse');
-  if (turned) { card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash'); }
-  return changed;
+  // The same cell again pulses twice, so a letter for the same cell still shows it was read.
+  const pulse = signal === 'again' ? 'again' : 'pulse';
+  cell.classList.remove('pulse', 'again'); void cell.offsetWidth; cell.classList.add(pulse);
+  if (signal !== 'again') { card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash'); }
+  return signal === 'changed';
+}
+
+/**
+ * Continuous scan: the cell fades while the camera no longer sees its letter (the next one not read yet). Only a
+ * letter the camera has seen fades: an address typed in stays.
+ */
+function fadeUnseenCell(raw, now) {
+  const card = $('sortingCard');
+  if (!sortingOn() || !shownResult || !selected) { card.classList.remove('stale'); return; }
+  if (raw.some(c => !c.manualOnly && isSameAddressFamily(c, selected))) { cellSeenAt = now; card.classList.remove('stale'); return; }
+  card.classList.toggle('stale', cellSeenAt !== null && staleCell(cellSeenAt, now));
 }
 $('sortingAssign').onclick = () => {
   const rack = activeRack(), text = shownResult && rack ? piece(preferredForm(shownResult, rack)) : null;
@@ -1482,10 +1499,8 @@ async function downloadLocalData(quiet = false, chosen = null, auto = false) {
     const data = parseLocal(mergeLocal(texts));
     if (!data) throw new Error('format');
     if (request !== localRequest) return;
-    const cache = await caches.open(LOCAL_CACHE);
-    for (const key of await cache.keys()) await cache.delete(key);
-    for (const [c, response] of responses) await cache.put(`./local/${c}.tsv.gz`, response);
-    store.set(KEYS.local, JSON.stringify({code, version: index.version, province: region.province, district: name, auto}));
+    await replaceLocalFiles(await caches.open(LOCAL_CACHE), responses, () =>
+      store.set(KEYS.local, JSON.stringify({code, version: index.version, province: region.province, district: name, auto})));
     localData = data;
     $('localMessage').textContent = `${name} 자료를 받았습니다. 이 지역 주소는 인터넷 없이 변환됩니다.`;
   } catch { $('localMessage').textContent = '받지 못했습니다. 잠시 뒤 다시 눌러 주세요.'; }
@@ -1566,7 +1581,7 @@ Promise.resolve(navigator.permissions?.query?.({name: 'camera'})).catch(() => nu
 
 // ---- offline readiness (required files only; Tesseract is cached when first used) ----
 // The service worker's own cache name (sw.js), so files prepared here are the ones it serves.
-const CACHE = 'roadname-assets-v39'; let swReady = null, cacheReady = false, updateReady = false;
+const CACHE = 'roadname-assets-v40'; let swReady = null, cacheReady = false, updateReady = false;
 const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 if ('serviceWorker' in navigator) swReady = navigator.serviceWorker.register('./sw.js').then(() => Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))])).catch(() => { $('cacheMessage').textContent = '오프라인 준비를 사용할 수 없습니다. 온라인 인식은 가능합니다.'; return null; });
 async function cacheFiles() { const res = await fetch('./cache-list.json'); if (!res.ok) throw new Error('파일 목록을 읽을 수 없습니다.'); return res.json(); }

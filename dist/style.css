@@ -173,6 +173,9 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .sorting-card.state .sorting-cell{font-size:34px;cursor:default}
 .sorting-card.setup .sorting-cell{cursor:pointer}
 .sorting-cell.pulse{animation:sorting-pulse .18s ease-out}
+.sorting-cell.again{animation:sorting-pulse .18s ease-out 2}
+#sortingCard.sorting-card{transition:opacity .2s}
+#sortingCard.sorting-card.stale{opacity:.3;filter:grayscale(1)}
 @keyframes sorting-pulse{from{transform:scale(1.12)}to{transform:none}}
 .sorting-card .converted-text.success{color:#17202b}
 #sortingAssign{margin-top:8px}

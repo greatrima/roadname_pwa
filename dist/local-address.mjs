@@ -197,3 +197,14 @@ export function autoDistrict(recent) {
 export async function gunzipText(bytes) {
   return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 }
+
+/**
+ * Puts a district's files ([code, response] pairs) in `cache`, then `record`s them, and only then deletes the files no
+ * longer used: a failed put (a full quota) or a closed tab leaves the data in use complete and its record pointing at it.
+ */
+export async function replaceLocalFiles(cache, files, record) {
+  const keep = new Set(files.map(([code]) => `${code}.tsv.gz`));
+  for (const [code, response] of files) await cache.put(`./local/${code}.tsv.gz`, response);
+  record();
+  for (const key of await cache.keys()) if (!keep.has(new URL(key.url).pathname.split('/').pop())) await cache.delete(key);
+}
