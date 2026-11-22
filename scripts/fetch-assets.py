@@ -20,9 +20,36 @@ assets = {
  'vendor/tesseract-core-lstm.wasm':'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0/tesseract-core-lstm.wasm',
  'models/kor.traineddata.gz':'https://tessdata.projectnaptha.com/4.0.0/kor.traineddata.gz',
  'models/eng.traineddata.gz':'https://tessdata.projectnaptha.com/4.0.0/eng.traineddata.gz',
- # Same dictionary as the Android app (always the latest committed version).
- 'models/address_dictionary.tsv.gz':'https://raw.githubusercontent.com/greatrima/roadnameconverter/main/app/src/main/assets/address_dictionary.tsv.gz',
+ 'models/address_dictionary.tsv.gz':None, # chosen below, as the Android app updates its own
 }
+# The same dictionary the Android app has: the one its latest release carries (how the app updates it), or the copy
+# committed in the old repository layout, whichever was generated later (the latter is no longer kept up to date).
+DICTIONARY_RAW='https://raw.githubusercontent.com/greatrima/roadnameconverter/main/app/src/main/assets/address_dictionary.tsv.gz'
+def dictionary_generated(data):
+ for line in gzip.decompress(data).decode('utf-8','replace').splitlines()[:5]:
+  if line.startswith('# generated='):return line.split('=',1)[1].strip()
+ return ''
+def newest_dictionary():
+ found=[]
+ try:
+  with urllib.request.urlopen('https://api.github.com/repos/greatrima/roadnameconverter/releases/latest',timeout=60) as res:
+   release=json.load(res)
+  url=next((a['browser_download_url'] for a in release.get('assets',[]) if a['name'].startswith('address_dictionary') and a['name'].endswith('.tsv.gz')),None)
+  if url:found.append(url)
+ except Exception as e:print('dictionary release:',e,flush=True)
+ found.append(DICTIONARY_RAW)
+ best=None
+ for url in found:
+  try:
+   with urllib.request.urlopen(url,timeout=90) as res:data=res.read()
+  except Exception as e:print('dictionary',url,e,flush=True);continue
+  if best is None or dictionary_generated(data)>best[0]:best=(dictionary_generated(data),url,data)
+ assert best,'no address dictionary'
+ path=root/'models/address_dictionary.tsv.gz';path.parent.mkdir(parents=True,exist_ok=True)
+ if not path.exists():path.write_bytes(best[2])
+ print('address dictionary from',best[1],flush=True)
+ return best[1]
+assets['models/address_dictionary.tsv.gz']=newest_dictionary()
 def download(item):
  name,url=item; path=root/name; path.parent.mkdir(parents=True,exist_ok=True)
  if not path.exists():
@@ -47,8 +74,9 @@ print('character count:',len(chars)+2,flush=True)
 # Ministry of the Interior and Safety's public road address data; served next to the app (dist/local/<code>.tsv.gz).
 import io, zipfile
 with urllib.request.urlopen('https://api.github.com/repos/greatrima/roadname_pwa/releases?per_page=30',timeout=60) as res:
- releases=[r for r in json.load(res) if r['tag_name'].startswith('local-')]
-release=max(releases,key=lambda r:r['tag_name'])
+ releases=[r for r in json.load(res) if r['tag_name'].startswith('local-') and not r.get('draft')]
+# The newest release that has its file (one left empty by a cut-off upload is skipped, not a failed deploy).
+release=max((r for r in releases if any(a['name']=='local-data.zip' for a in r['assets'])),key=lambda r:r['tag_name'])
 url=next(a['browser_download_url'] for a in release['assets'] if a['name']=='local-data.zip')
 with urllib.request.urlopen(url,timeout=300) as res: bundle=res.read()
 zipfile.ZipFile(io.BytesIO(bundle)).extractall(root)

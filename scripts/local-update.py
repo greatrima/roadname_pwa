@@ -29,7 +29,8 @@ def gh(*args):
 
 def newest_month():
     releases = json.loads(gh('api', f'repos/{REPO}/releases?per_page=50'))
-    tags = sorted(r['tag_name'] for r in releases if r['tag_name'].startswith('local-'))
+    # A draft (a run cut off before its file was in) is not published.
+    tags = sorted(r['tag_name'] for r in releases if r['tag_name'].startswith('local-') and not r.get('draft'))
     return tags[-1].removeprefix('local-') if tags else None
 
 
@@ -77,6 +78,25 @@ def build(source, out):
     return pathlib.Path(out) / 'local-data.zip'
 
 
+def district_count(bundle):
+    """How many district files the bundle has (none when the source's file names changed)."""
+    with zipfile.ZipFile(bundle) as z:
+        return sum(1 for n in z.namelist() if n.endswith('.tsv.gz'))
+
+
+def publish(month, bundle):
+    """Draft first, the file in, then public: a run cut off on the way never leaves an empty public release."""
+    tag = f'local-{month}'
+    try:
+        if json.loads(gh('release', 'view', tag, '--repo', REPO, '--json', 'isDraft')).get('isDraft'):
+            gh('release', 'delete', tag, '--repo', REPO, '--yes')
+    except subprocess.CalledProcessError:
+        pass
+    gh('release', 'create', tag, str(bundle), '--repo', REPO, '--draft', '--title', f'오프라인 데이터 {month}',
+       '--notes', f'행정안전부 도로명주소 한글 전체분({month[:4]}년 {int(month[4:])}월, business.juso.go.kr 공개 자료)을 시·군·구별로 나눈 파일.')
+    gh('release', 'edit', tag, '--repo', REPO, '--draft=false')
+
+
 def check():
     """Published release, what the site serves and what juso.go.kr has; True when all are the newest."""
     published = newest_month()
@@ -107,11 +127,13 @@ def main():
             print(f'{month}: not out yet', flush=True)
             return
         bundle = build(source, pathlib.Path(folder) / 'out')
+        count = district_count(bundle)
+        if count == 0:
+            sys.exit(f'{month}: no district files were made (the source file names may have changed); nothing published')
         if dry:
-            print(f'{month}: built {bundle.stat().st_size} bytes (dry run, nothing published)', flush=True)
+            print(f'{month}: built {bundle.stat().st_size} bytes, {count} districts (dry run, nothing published)', flush=True)
             return
-        gh('release', 'create', f'local-{month}', str(bundle), '--repo', REPO, '--title', f'오프라인 데이터 {month}',
-           '--notes', f'행정안전부 도로명주소 한글 전체분({month[:4]}년 {int(month[4:])}월, business.juso.go.kr 공개 자료)을 시·군·구별로 나눈 파일.')
+        publish(month, bundle)
         gh('workflow', 'run', 'pages.yml', '--repo', REPO, '--ref', 'main')
         print(f'{month}: published and the site is redeploying', flush=True)
 
