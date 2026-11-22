@@ -229,7 +229,10 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .link-button{display:flex;align-items:center;justify-content:center;min-height:48px;width:100%;border:1px solid #cbd3df;border-radius:12px;color:#17202b!important;font-size:15px!important;font-weight:700;text-decoration:none}
 .maker{text-align:center;padding-top:12px}
 .maker img{display:block;width:180px;height:180px;margin:0 auto 20px}
-:root.keyboard .app-shell{height:var(--visible-height)}
+/* Keyboard up (iPhone home-screen app): the app is pinned to the area above the keyboard, which iOS may have scrolled,
+   and the camera folds away so the address box and the result get the room; it comes back when the keyboard closes. */
+:root.keyboard .app-shell{position:fixed;left:0;right:0;top:var(--visible-top);height:var(--visible-height)}
+:root.keyboard .camera-pane{height:0}
 :root.keyboard dialog{max-height:calc(var(--visible-height) - 16px);margin-top:calc(var(--visible-top) + 8px);margin-bottom:auto}
 /* 3.0.0: recent addresses, memory list, apartments, maker and share pages */
 .recent-list{margin-top:4px}

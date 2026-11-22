@@ -21,6 +21,7 @@ const WHATS_NEW = `
 
 ### 고친 점
 - 송장의 받는분·받는곳·수취인·발송인 같은 칸 이름 글자가 주소 앞에 붙어 인식되던 문제 수정
+- 아이폰에서 주소창을 누르면 화면이 어긋나고 입력칸이 찌그러지던 문제 수정
 `;
 $('appVersion').textContent = APP_VERSION; $('webVersion').textContent = APP_VERSION;
 const photo = $('photo'), ctx = photo.getContext('2d', {willReadFrequently: true});
