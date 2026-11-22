@@ -1488,8 +1488,14 @@ function noteDistrict(r) {
   store.set(KEYS.recent, JSON.stringify(rememberDistrict(recent, r)));
   if (currentRegion().district) return;
   const found = autoDistrict(JSON.parse(store.get(KEYS.recent) || '[]')), meta = localMeta();
-  if (found && !(meta && meta.district === found.district && meta.province === found.province)) void downloadLocalData(true, found, true);
+  if (!found || (meta && meta.district === found.district && meta.province === found.province)) return;
+  // Once per district a session: a district without data, or no network, is not asked after every conversion.
+  const key = `${found.province} ${found.district}`;
+  if (autoTried.has(key)) return;
+  autoTried.add(key);
+  void downloadLocalData(true, found, true);
 }
+const autoTried = new Set();
 async function loadLocalData() {
   const meta = localMeta();
   if (!meta) return;
