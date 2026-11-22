@@ -7,6 +7,7 @@
     "./address-convert.mjs",
     "./address-suggest.mjs",
     "./address-memory.mjs",
+    "./address-notes.mjs",
     "./sorting.mjs",
     "./local-address.mjs",
     "./recent-address.mjs",

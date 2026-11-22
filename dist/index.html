@@ -33,7 +33,7 @@
     <section id="progressPanel" class="progress-panel" hidden aria-live="polite"><div><strong id="status">준비 중</strong><button id="cancel" class="textbutton">취소</button></div><progress id="progress" max="100"></progress><p id="progressDetail"></p></section>
     <p id="error" class="error" role="alert" hidden></p>
     <section class="field" aria-label="기준 주소">
-     <div class="address-box"><div class="box-head"><label for="addressInput">기준 주소</label><button id="copyAddress" class="copy-button" aria-label="기준 주소 복사" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H5a1 1 0 0 0-1 1v12"/><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M8 8V4h8v4"/></svg></button></div><p id="englishSource" class="english-source" hidden></p><textarea id="addressInput" rows="2" spellcheck="false" autocomplete="off" enterkeyhint="search"></textarea></div>
+     <div class="address-box"><div class="box-head"><label for="addressInput">기준 주소</label><button id="copyAddress" class="copy-button" aria-label="기준 주소 복사" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H5a1 1 0 0 0-1 1v12"/><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M8 8V4h8v4"/></svg></button><button id="noteButton" class="copy-button" aria-label="주소 메모" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button></div><p id="englishSource" class="english-source" hidden></p><textarea id="addressInput" rows="2" spellcheck="false" autocomplete="off" enterkeyhint="search"></textarea></div><p id="noteText" class="note-text" hidden></p>
      <div id="recentList" class="recent-list" hidden></div>
      <p id="detailText" class="detail-text" hidden></p>
     </section>
@@ -227,6 +227,9 @@
   <a class="maker-licenses" href="./licenses.txt" target="_blank" rel="noopener">오픈소스 및 데이터 출처</a>
   </div>
  </dialog>
+ <dialog id="noteDialog"><div class="dialog-head"><h2 id="noteTitle"></h2><button id="closeNote" class="iconbutton" aria-label="닫기">×</button></div>
+  <textarea id="noteInput" class="note-input" rows="3" maxlength="200" placeholder="예: 어쩌로 60-1 앞 밭"></textarea>
+  <div class="note-actions"><button id="deleteNote">지우기</button><button id="saveNote" class="primary">저장</button></div></dialog>
  <dialog id="whatsNewDialog"><div class="dialog-head"><h2 id="whatsNewTitle">업데이트 내역</h2><button id="closeWhatsNew" class="iconbutton" aria-label="닫기">×</button></div>
   <div id="whatsNewBody" class="whats-new"></div>
   <button id="okWhatsNew" class="primary wide">확인</button></dialog>

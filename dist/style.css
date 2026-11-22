@@ -150,7 +150,10 @@ dialog h3{font-size:13px;color:#9c3260;margin:22px 0 2px;letter-spacing:.2px}
 .address-box{border:1px solid #cbd3df;border-radius:10px;background:#fff;margin-top:8px}
 .address-box:focus-within{border-color:#d4347a;box-shadow:0 0 0 2px #ffd1e3}
 .box-head{display:flex;align-items:center;justify-content:space-between;padding-left:12px;min-height:38px}
-.box-head label{font-size:12px;font-weight:700;color:#9c3260}
+.box-head label{margin-right:auto;font-size:12px;font-weight:700;color:#9c3260}
+.note-text{margin:8px 0 0;padding:10px 12px;border-radius:10px;background:#EEF1F5;color:#17202b;font-weight:700;font-size:16px;white-space:pre-wrap;overflow-wrap:anywhere}
+.note-input{width:100%;box-sizing:border-box;font:16px/1.4 inherit;padding:10px;border:1px solid #cbd3df;border-radius:10px;resize:vertical}
+.note-actions{display:flex;gap:8px;margin-top:12px}.note-actions button{flex:1}
 .english-source{margin:0;padding:0 12px 2px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#7a8394;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .box-head .copy-button,.result-row .copy-button{min-height:38px;padding:8px 10px}
 .result-row{display:flex;align-items:flex-start;gap:6px;padding-top:12px}

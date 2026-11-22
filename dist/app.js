@@ -6,6 +6,7 @@ import {
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
+import {AddressNotes, noteKey} from './address-notes.mjs';
 import {parseLocal, lookupLocal, gunzipText, correctNames, rememberDistrict, autoDistrict, mergeLocal, localEntries, replaceLocalFiles} from './local-address.mjs';
 import {parseRackLabel, describe as describeEntry, describeApartment, apartmentAddresses, apartmentCells, assignApartment, apartmentUnits, spreadUnits, placeApartment, locate, overlaps, piece, filledCount, exportText, importText, configured, cellCount, PRIORITY, cellSignal, staleCell} from './sorting.mjs';
 import {visibleRecent, addRecent} from './recent-address.mjs';
@@ -18,6 +19,7 @@ const APP_VERSION = '3.2.3';
 const WHATS_NEW = `
 ### 새 기능
 - EMS 등 국제우편의 영문 주소 인식 (영문 원문은 결과 위에 작게 표시)
+- 주소 메모: 주소칸 옆 연필을 눌러 그 주소에 메모를 남기면(예: 어쩌리 166 → 어쩌로 60-1 앞 밭) 같은 주소가 다시 나올 때 보여 줌
 
 ### 고친 점
 - 송장의 받는분·받는곳·수취인·발송인 같은 칸 이름 글자가 주소 앞에 붙어 인식되던 문제 수정
@@ -34,7 +36,7 @@ let stream = null, hasPhoto = false, busy = false, job = 0, paddle = null, paddl
 const KEYS = {region: 'roadname-region', localities: 'roadname-localities', vworld: 'roadname-vworld-key', vworldDefault: 'roadname-vworld-default',
   kakao: 'roadname-kakao-key', map: 'roadname-map', engine: 'roadname-engine', continuous: 'roadname-continuous', offline: 'roadname-offline',
   developer: 'roadname-developer', hidden: 'roadname-hidden-buttons', alertVibrationOff: 'roadname-alert-vibration-off',
-  alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
+  alertSoundOff: 'roadname-alert-sound-off', memory: 'roadname-memory', notes: 'roadname-notes', memoryOff: 'roadname-memory-off', dictionaryChecked: 'roadname-dictionary-checked', installHint: 'roadname-install-hint-closed',
   seenVersion: 'roadname-seen-version', sorting: 'roadname-sorting', local: 'roadname-local', recent: 'roadname-recent-districts',
   offlineMode: 'roadname-offline-mode', recentLimit: 'roadname-recent-limit', recentMidnight: 'roadname-recent-midnight',
   recentAddresses: 'roadname-recent-addresses', recentOpen: 'roadname-recent-open', recentLines: 'roadname-recent-lines'};
@@ -43,6 +45,7 @@ const store = {
   set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch {} },
 };
 const flag = key => store.get(key) === '1';
+const notes = new AddressNotes(store.get(KEYS.notes)); // "주소 메모", below
 // "오프라인 모드": no address server is asked, only the region's own data (taking that data still works).
 const online = () => navigator.onLine && !flag(KEYS.offlineMode);
 const continuousScan = () => flag(KEYS.continuous);
@@ -170,12 +173,12 @@ const apiAlternatives = new Map();
 const tracker = new CandidateTracker(), autoPolicy = new AutoConversionPolicy();
 const uniqueCandidates = list => { const seen = new Set(); return list.filter(c => { const k = identity(c); if (seen.has(k)) return false; seen.add(k); return true; }); };
 
-function setInput(text) { $('addressInput').value = text; $('copyAddress').disabled = !text.trim(); showEnglishSource(text); }
+function setInput(text) { $('addressInput').value = text; $('copyAddress').disabled = !text.trim(); showEnglishSource(text); showNote(); }
 function setStatus(text) { $('statusText').textContent = text || ''; }
 function showDetails(details) { $('detailText').hidden = !details; $('detailText').textContent = details ? `상세주소·건물: ${details}` : ''; }
 function setMapAddress(address) { mapAddress = address; $('mapButton').disabled = !address; $('copyResult').disabled = !address; }
 function setConverted(text, tone = '') {
-  if (tone !== 'success' && shownResult) { shownResult = null; showSorting(); }
+  if (tone !== 'success' && shownResult) { shownResult = null; showSorting(); showNote(); }
   const view = $('convertedText'), name = tone === 'success' ? parseParts(text)?.name : null, start = name ? text.indexOf(name) : -1;
   view.className = `converted-text${tone ? ` ${tone}` : ''}`;
   if (start < 0) { view.textContent = text; return; }
@@ -297,7 +300,7 @@ function showSuccess(r) {
   awaitingNetwork = false; setMapAddress(shown); diag.finish('완료', r.convertedAddress);
   setConverted(shown, 'success');
   setStatus(`${SOURCE_LABEL[r.source]}에서 확인된 주소입니다.`);
-  shownResult = r; cellSeenAt = null;
+  shownResult = r; cellSeenAt = null; showNote();
   noteDistrict(r);
   saveRecent(addRecent(recentAll(), r, recentLimit(), flag(KEYS.recentMidnight)));
   showRecent();
@@ -777,8 +780,34 @@ $('addressInput').oninput = () => {
   editing = true; requestSeq++; setConverting(false); awaitingNetwork = false; showDetails(''); resetResult(); setStatus(''); diag.finish('편집 중 · 검색 취소', '');
   $('englishSource').hidden = true;
   $('copyAddress').disabled = !$('addressInput').value.trim();
+  showNote();
   showRecent();
 };
+
+// ---- "주소 메모": the user's own words for an address (a field with no road name, a gate to use), in this browser ----
+/** The note of the address in the box, else of the address it was converted to, under the box. */
+function showNote() {
+  const input = $('addressInput').value, note = notes.find(input, shownResult?.recognizedAddress, shownResult?.convertedAddress);
+  $('noteButton').disabled = !noteKey(input);
+  $('noteText').hidden = !note;
+  $('noteText').textContent = note ? `메모 · ${note}` : '';
+}
+let noteAddress = '';
+$('noteButton').onclick = () => {
+  noteAddress = $('addressInput').value.trim();
+  if (!noteKey(noteAddress)) return;
+  $('noteTitle').textContent = noteAddress;
+  $('noteInput').value = notes.find(noteAddress) || '';
+  $('noteDialog').showModal();
+};
+function saveNote(text) {
+  notes.put(noteAddress, text);
+  store.set(KEYS.notes, notes.serialize());
+  $('noteDialog').close(); showNote();
+}
+$('saveNote').onclick = () => saveNote($('noteInput').value);
+$('deleteNote').onclick = () => saveNote('');
+$('closeNote').onclick = () => $('noteDialog').close();
 
 // ---- "최근 주소": under the empty, focused input, newest first; a tap converts it again ----
 const recentLines = () => Math.min(10, Math.max(2, parseInt(store.get(KEYS.recentLines), 10) || 3));
