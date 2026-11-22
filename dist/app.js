@@ -232,7 +232,7 @@ function renderCandidates(list) {
 }
 
 const liveCamera = () => !!stream && !hasPhoto;
-function acceptCandidate(c, {manual = true} = {}) {
+function acceptCandidate(c, {manual = true, source = lastOcr?.text || ''} = {}) {
   editing = false;
   if (c.completeness !== COMPLETE) {
     // Keep a partial observation editable and keep reading the number; never invent it.
@@ -250,19 +250,19 @@ function acceptCandidate(c, {manual = true} = {}) {
   if (!continuousScan()) stopScanning();
   setInput(c.text + (c.details ? ` ${c.details}` : '')); showDetails(c.details);
   renderCandidates(uniqueCandidates([c, ...alternatives]));
-  if (chosen) { requestSeq++; setConverting(false); showSuccess(chosen); void learnConfirmed(chosen, true); }
-  else void convertAddress(c.text, manual);
+  if (chosen) { requestSeq++; setConverting(false); sortingSource = source; showSuccess(chosen); void learnConfirmed(chosen, true); }
+  else void convertAddress(c.text, manual, source);
 }
 
 function submitManualAddress() {
   const raw = $('addressInput').value, found = extractCandidate(raw);
   if (!found) { setStatus('도로명·지명과 건물번호·번지를 함께 입력해 주세요.'); return; }
   const text = withDefaultRegion(found, currentRegion()).text;
-  acceptCandidate({...found, text, details: extractDetails(raw, found.text)});
+  acceptCandidate({...found, text, details: extractDetails(raw, found.text)}, {source: raw});
 }
 
 /** confirmed: typed, corrected or chosen by the user, so a found address may be remembered. */
-async function convertAddress(raw, confirmed = false) {
+async function convertAddress(raw, confirmed = false, source = lastOcr?.text || '') {
   const parsed = extract(raw) ?? raw.trim();
   // Without a number, a building name of the region's own data still finds the address ("한빛아파트 104동").
   const byName = !parsed || parseParts(parsed)?.number == null ? lookupLocal(localData, raw) : null;
@@ -279,7 +279,7 @@ async function convertAddress(raw, confirmed = false) {
   setConverting(false);
   switch (result.type) {
     case 'success':
-      countOutcome(true); showSuccess(result.result);
+      countOutcome(true); sortingSource = source; showSuccess(result.result);
       if (confirmed) void learnConfirmed(result.result, true);
       else { unconfirmed = result.result; showAppliedCorrection(result.result); }
       break;
@@ -1134,7 +1134,9 @@ $('closeWhatsNew').onclick = $('okWhatsNew').onclick = () => $('whatsNewDialog')
 // ---- "순로구분": which rack cell a converted address goes into (대구분). Several racks may be kept (내 구역, a
 // round covered for a colleague), one in use; each is named, exported as text and imported back (the app reads the
 // same text). Same rules as the Android app, in sorting.mjs. Kept in this browser only. ----
-let shownResult = null, lastCell = null, cellSeenAt = null, editingRack = null, editingCell = 1, rackResizing = false, rackGuideOpen = null, assignPieceText = null;
+// sortingSource: the text the shown result was read from (the camera's frame then, or what was typed): its 동 places
+// the letter, not whatever the camera reads afterwards (as on Android).
+let sortingSource = '', shownResult = null, lastCell = null, cellSeenAt = null, editingRack = null, editingCell = 1, rackResizing = false, rackGuideOpen = null, assignPieceText = null;
 function sortingState() {
   try {
     const s = JSON.parse(store.get(KEYS.sorting) || '{}');
@@ -1175,7 +1177,7 @@ function showSorting(fresh = false) {
   showRegion();
   if (!state.enabled || !r) { card.className = ''; cell.hidden = true; assign.hidden = true; return false; }
   const rack = activeRack(state);
-  const verdict = rack ? locate(rack, roadForm(r), parcelForm(r), `${lastOcr?.text || ''}\n${$('addressInput').value}`) : {state: 'notConfigured'};
+  const verdict = rack ? locate(rack, roadForm(r), parcelForm(r), `${sortingSource}\n${$('addressInput').value}`) : {state: 'notConfigured'};
   cell.onclick = null;
   let tone;
   if (verdict.cell) {
