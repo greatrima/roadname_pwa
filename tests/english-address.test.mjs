@@ -73,3 +73,37 @@ test('english: a result read in English is shown in both forms, 도로명 then �
   assert.equal(readInEnglish('우정로12', '우정특별시 통상구 별골로 1'), false);
   assert.equal(readInEnglish('', '우정로 12'), false);
 });
+
+// Review 2026-11-22, 11~15 (as Android EnglishAddressTest).
+test('english 11: Officetel and Hotel are no telephone', () => {
+  assert.equal(read('Ujeong Officetel 1203ho, Ujeong-ro 5, Tongsang-gu')?.korean, '통상구 우정로 5 1203호');
+  assert.equal(read('Ujeong Hotel, Ujeong-ro 7, Tongsang-gu, Korea')?.korean, '통상구 우정로 7');
+  assert.equal(read('Ujeong-ro 7, Tongsang-gu\nTel 010-1234-5678')?.korean, '통상구 우정로 7');
+});
+
+test('english 12: a floor after the road is no building number', () => {
+  assert.equal(read('12 Ujeong-ro, 2nd Floor, Tongsang-gu')?.korean, '통상구 우정로 12');
+  assert.equal(read('12 Ujeong-ro, 3F, Tongsang-gu')?.korean, '통상구 우정로 12');
+  assert.equal(read('12 Ujeong-ro, 1st fl., Tongsang-gu')?.korean, '통상구 우정로 12');
+});
+
+test('english 13: the surname Park is no park', () => {
+  const withPark = englishPlaces(['우정공원로', '우정로', '공원길'], ['집배동']);
+  assert.equal(englishAddress('Park Gil-soo\nUjeong-ro 5, Tongsang-gu, Korea', '통상구', withPark)?.korean, '통상구 우정로 5');
+  assert.equal(englishAddress('Mr. Park, Ujeong-ro 5, Tongsang-gu', '통상구', withPark)?.korean, '통상구 우정로 5');
+  assert.equal(englishAddress('12 Ujeong Park-ro, Tongsang-gu', '통상구', withPark)?.korean, '통상구 우정공원로 12');
+});
+
+test('english 14: a numbered gil not in the list is kept as written', () => {
+  assert.equal(read('Ujeong-ro 9beon-gil 34, Tongsang-gu')?.korean, '통상구 우정로9번길 34');
+  assert.equal(read('Ujeong-ro 7-gil 3, Tongsang-gu')?.korean, '통상구 우정로7길 3');
+});
+
+test('english 15: roads folded alike are told apart by the spelling written', () => {
+  for (const order of [['성호로', '송호로'], ['송호로', '성호로']]) {
+    const alike = englishPlaces(order, []);
+    assert.equal(englishAddress('Songho-ro 5, Tongsang-gu', '통상구', alike)?.korean, '통상구 송호로 5');
+    assert.equal(englishAddress('Seongho-ro 5, Tongsang-gu', '통상구', alike)?.korean, '통상구 성호로 5');
+  }
+});
+

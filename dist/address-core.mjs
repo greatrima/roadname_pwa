@@ -754,19 +754,23 @@ export function romanize(name) {
 const EN_LATIN = /[A-Za-z]/g, EN_HANGUL = /[가-힣]/g;
 const EN_MARKER = /(?:daero|ro|gil|dong|eup|myeon|ri|gu|si|korea)\b|\d{5}/i;
 const EN_COUNTRY = /\b(?:republic\s+of\s+korea|south\s+korea|s\.?\s*korea|korea|rok)\b/gi;
-const EN_PHONE_SOURCE = String.raw`(?:tel|phone|mobile|\+82)[^\n]*|\b0\d{1,2}[-. ]\d{3,4}[-. ]\d{4}\b`;
+// "Tel"/"Phone" as words only: "Officetel" and "Hotel" are part of the address (as on Android).
+const EN_PHONE_SOURCE = String.raw`(?:\b(?:tel|phone|mobile|mob|hp)\b\.?|\+82)[^\n]*|\b0\d{1,2}[-. ]\d{3,4}[-. ]\d{4}\b`;
 const EN_PHONE = new RegExp(EN_PHONE_SOURCE, 'gi');
 const EN_PHONE_LINE = new RegExp(`^(?:${EN_PHONE_SOURCE})$`, 'i');
 const EN_POSTAL = /(?<!\d)\d{5}(?!\d)/g;
 const EN_TRANSLATED = [
   ['national university', 'daehak'], ['university', 'daehak'], ['univ', 'daehak'], ['city hall', 'sicheong'],
-  ['park', 'gongwon'], ['station', 'yeok'], ['stn', 'yeok'], ['market', 'sijang'], ['hospital', 'byeongwon'],
+  ['station', 'yeok'], ['stn', 'yeok'], ['market', 'sijang'], ['hospital', 'byeongwon'],
   ['school', 'hakgyo'], ['river', 'gang'], ['bridge', 'gyo'], ['mountain', 'san'], ['mt', 'san'], ['lake', 'hosu'],
   ['church', 'gyohoe'], ['temple', 'sa'], ['port', 'hang'], ['harbor', 'hang'], ['harbour', 'hang'],
   ['airport', 'gonghang'], ['central', 'jungang'], ['center', 'senteo'], ['centre', 'senteo'],
   ['avenue', 'daero'], ['ave', 'daero'], ['boulevard', 'daero'], ['blvd', 'daero'],
   ['road', 'ro'], ['rd', 'ro'], ['street', 'ro'], ['st', 'ro'], ['lane', 'gil'], ['ln', 'gil'],
-].map(([from, to]) => [new RegExp(String.raw`\b${from.replace(' ', String.raw`\s+`)}\b`, 'g'), to]);
+].map(([from, to]) => [new RegExp(String.raw`\b${from.replace(' ', String.raw`\s+`)}\b`, 'g'), to]).concat([
+  // "Park" only as part of a road or place name ("Ujeong Park-ro"); "Park Gil-soo" is a surname and a given name.
+  [/\bpark\b(?=[\s-]*(?:(?:ro|road|rd|gil|lane|street|st|daero|avenue|ave|dong)(?![a-z]|-[a-z])|\d))/g, 'gongwon'],
+]);
 const EN_FOLDS = [['woo', 'u'], ['oo', 'u'], ['ee', 'i'], ['eo', 'o'], ['ae', 'e'], ['eu', 'u'], ['ui', 'i'], ['wo', 'o'],
   ['ch', 'j'], ['sh', 's'], ['k', 'g'], ['p', 'b'], ['t', 'd'], ['r', 'l'], ['x', 's'], ['z', 'j'], ['f', 'b'], ['v', 'b'],
   ['c', 'g'], ['ll', 'l'], ['y', 'i']];
@@ -825,7 +829,7 @@ function within(text, place) {
   return {place, start: start[end], end, cost: cost[end]};
 }
 
-function bestPlace(text, places) {
+function bestPlace(text, places, raw = '') {
   let best = null;
   for (const place of places) {
     if (place.key.length < 4) continue;
@@ -833,14 +837,17 @@ function bestPlace(text, places) {
     if (!hit || hit.cost > Math.max(1, Math.floor(place.key.length / 5))) continue;
     // The kind of name must be written as it is: "-ro" is no "-dong" ("Jipbae-dong" is not "Jipbaedong-ro").
     if (hit.end < 2 || text.slice(hit.end - 2, hit.end) !== place.key.slice(-2)) continue;
-    if (!best || hit.cost * best.place.key.length < best.cost * place.key.length ||
-      (hit.cost * best.place.key.length === best.cost * place.key.length && place.key.length > best.place.key.length)) best = hit;
+    const score = hit.cost * (best?.place.key.length ?? 1), other = (best?.cost ?? 0) * place.key.length;
+    if (!best || score < other || (score === other && place.key.length > best.place.key.length) ||
+      // Folded alike ('성호로'/'송호로'): the one spelled as written wins.
+      (score === other && place.key.length === best.place.key.length && raw.includes(place.raw) && !raw.includes(best.place.raw))) best = hit;
   }
   return best;
 }
 
 const EN_NUMBERED_ROAD = /^[\s,.-]*(\d{1,4})\s*-?\s*(beon)?\s*-?\s*gil\b/;
-const EN_BUILDING_AFTER = /^[\s,.-]*((?:b\s*)?\d{1,4}(?:\s*-\s*\d{1,4})?)(?!\d|\s*-?\s*(?:dong|ho|f\b|fl|floor|cheung|beon|gil))/;
+// Not a floor ("2nd Floor", "3F", "1st fl."), a unit or a numbered gil.
+const EN_BUILDING_AFTER = /^[\s,.-]*((?:b\s*)?\d{1,4}(?:\s*-\s*\d{1,4})?)(?!\d|\s*-?\s*(?:dong|ho|f\b|fl|floor|cheung|beon|gil|st\b|nd\b|rd\b|th\b))/;
 const EN_BUILDING_BEFORE = /(?<![\d#-])(\d{1,4}(?:-\d{1,4})?)[\s,]*$/;
 const EN_PARCEL_AFTER = /^[\s,.-]*((?:san\s*)?\d{1,4}(?:\s*-\s*\d{1,4})?)(?!\d|\s*-?\s*(?:dong|ho))/;
 const EN_DONG = /(?<![\d-])(\d{1,4})\s*-?\s*(?:dong|d|bldg|building)\b|(?<![a-z-])(?:bldg|building|dong)\.?\s*(\d{1,4})\b/;
@@ -871,38 +878,42 @@ function englishLine(text) {
     .join(', ').replace(/\s+/g, ' ');
 }
 
+// key: the romanized name folded; raw: as romanized, letters only (tells folded look-alikes apart).
+const englishPlace = (name, romanized) => { const roman = romanize(romanized); return {name, key: foldEnglish(roman), raw: roman.replace(/[^a-z0-9]/g, '')}; };
+
 /** Romanized keys of a district's roads ("우정로12번길" is found as 우정로; "중앙1길" stays a name of its own). */
 export function englishPlaces(roads, localities) {
   return {
     roads: new Set(roads),
-    roadPlaces: [...new Set(roads.map(r => r.replace(/(?<=로)\d+(?:번길|길)$/, '')))].map(name => ({name, key: foldEnglish(romanize(name))})),
-    localityPlaces: localities.map(name => ({name, key: foldEnglish(romanize(name.split(' ').pop()))})),
+    roadPlaces: [...new Set(roads.map(r => r.replace(/(?<=로)\d+(?:번길|길)$/, '')))].map(name => englishPlace(name, name)),
+    localityPlaces: localities.map(name => englishPlace(name, name.split(' ').pop())),
   };
 }
 
-/** The English as written, "동·호 확인" first when the 동·호 may be wrong: a line cut short never hides it. */
 /** Whether `address` is what an English address was read as (`place`: its road or place and number, no spaces). */
 export const readInEnglish = (place, address) => place.length >= 3 && String(address || '').replace(/\s/g, '').includes(place);
 
 /** An address read in English (EMS) is shown in both forms. */
 export const bothForms = (road, parcel) => [['도로명', road], ['지번', parcel]];
 
+/** The English as written, "동·호 확인" first when the 동·호 may be wrong: a line cut short never hides it. */
 export const englishSourceText = read => (read.unitUnsure ? `동·호 확인 · ${read.english}` : read.english);
 
 /** {korean, english, unitUnsure} for an address in English, or null; `places` from englishPlaces. */
 export function englishAddress(text, district, places) {
   if (!looksEnglish(text)) return null;
   const english = englishLine(text), normal = normalizeEnglish(text);
-  const [key, positions] = squeezed(normal);
-  const roadHit = bestPlace(key, places.roadPlaces);
+  const [key, positions] = squeezed(normal), raw = normal.replace(/[^a-z0-9]/g, '');
+  const roadHit = bestPlace(key, places.roadPlaces, raw);
   if (roadHit) {
     const after = normal.slice(positions[roadHit.end - 1] + 1), before = normal.slice(0, positions[roadHit.start]);
     let road = roadHit.place.name, rest = after;
     const numbered = EN_NUMBERED_ROAD.exec(after);
     if (numbered) {
       const kinds = numbered[2] ? ['번길', '길'] : ['길', '번길'];
-      const found = kinds.map(k => road + numbered[1] + k).find(r => places.roads.has(r));
-      if (found) { road = found; rest = after.slice(numbered.index + numbered[0].length); }
+      // One the district list does not know is still that road, as written (not its main road).
+      road = kinds.map(k => road + numbered[1] + k).find(r => places.roads.has(r)) || road + numbered[1] + kinds[0];
+      rest = after.slice(numbered.index + numbered[0].length);
     }
     // "12 Woojeong-ro" (number first, as English is written) is read too, after "Woojeong-ro 12".
     const numberAfter = EN_BUILDING_AFTER.exec(rest), numberBefore = numberAfter ? null : EN_BUILDING_BEFORE.exec(before);
@@ -913,7 +924,7 @@ export function englishAddress(text, district, places) {
     const [units, unsure] = englishUnits(left, building);
     return {korean: [district, road, building || '', units].filter(Boolean).join(' '), english, unitUnsure: unsure};
   }
-  const placeHit = bestPlace(key, places.localityPlaces);
+  const placeHit = bestPlace(key, places.localityPlaces, raw);
   if (!placeHit) return null;
   const after = normal.slice(positions[placeHit.end - 1] + 1), before = normal.slice(0, positions[placeHit.start]);
   const parcelMatch = EN_PARCEL_AFTER.exec(after), parcelBefore = parcelMatch ? null : EN_BUILDING_BEFORE.exec(before);
