@@ -127,3 +127,13 @@ test('local: the files no longer used go only after the new ones and their recor
   assert.deepEqual(order, ['./local/99001.tsv.gz,./local/99002.tsv.gz']);
   assert.deepEqual([...cache.files.keys()], ['./local/99002.tsv.gz']);
 });
+
+test('local 37: the same road and number in two 구 is not guessed (as on Android)', () => {
+  const gu = (name, parcel) => ['# address-lens-local-v1', '# version=202609', `# district=경기도 솔내시 ${name}`,
+    'R\t중앙로', `L\t${name.slice(0, -1)}동`, `B\t0\t7\t0\t${parcel}\t`].join('\n');
+  const data = parseLocal(mergeLocal([gu('동녘구', '10'), gu('서녘구', '20')]));
+  assert.equal(lookupLocal(data, '중앙로 7'), null);
+  assert.equal(lookupLocal(data, '동녘구 중앙로 7').convertedAddress, '경기도 솔내시 동녘구 동녘동 10');
+  assert.equal(lookupLocal(data, '솔내시 서녘구 중앙로 7').convertedAddress, '경기도 솔내시 서녘구 서녘동 20');
+});
+

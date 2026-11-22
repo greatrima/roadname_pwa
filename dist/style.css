@@ -347,3 +347,4 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .setting-card>.toggle .toggle-text{flex:1}
 .setting-card>.setting-row label{white-space:nowrap}
 .setting-card>.setting-row input{max-width:96px}
+.old-browser{margin:16px;padding:14px 16px;border-radius:12px;background:#FCEBEB;color:#B42318;font-weight:700;font-size:16px;line-height:1.5}

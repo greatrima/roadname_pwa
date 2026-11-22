@@ -236,5 +236,28 @@
  <!-- Anonymous counts (GoatCounter, no cookies): only /app (home-screen) or /web (browser), plus /ok or /fail for a lookup; never addresses or photos. -->
  <script>window.goatcounter={path:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'/app':'/web',title:()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches?'홈 화면 앱':'브라우저'};</script>
  <script data-goatcounter="https://greatrima.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+ <!-- iOS before 16.4 cannot run the app's scripts at all (look-behind patterns): say so instead of a dead screen.
+  A new page read with an older module (a deploy on a slow network) is loaded once more, fresh. -->
+ <script>
+ (function () {
+   try { new RegExp('(?<=a)b'); } catch (e) {
+     var note = document.createElement('p');
+     note.className = 'old-browser';
+     note.textContent = '이 기기의 브라우저가 오래되어 열 수 없습니다. iOS 16.4 이상(또는 최신 Chrome)으로 업데이트해 주세요.';
+     document.body.insertBefore(note, document.body.firstChild);
+     return;
+   }
+   window.addEventListener('error', function (e) {
+     if (!/import|export|module|Unexpected/i.test(String(e.message || ''))) return;
+     try {
+       if (sessionStorage.getItem('roadname-reloaded')) return;
+       sessionStorage.setItem('roadname-reloaded', '1');
+     } catch (_) { return; }
+     var again = function () { location.reload(); };
+     if (navigator.serviceWorker) navigator.serviceWorker.getRegistration().then(function (r) { return r && r.update(); }).then(again, again);
+     else again();
+   });
+ })();
+ </script>
  <script src="./vendor/tesseract.min.js" defer></script><script type="module" src="./app.js?v=40"></script>
 </body></html>

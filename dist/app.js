@@ -84,7 +84,8 @@ async function loadDictionary() {
   dictionaryTree = tree; dictionaryVersion = version; $('dictionaryVersion').textContent = version;
   return tree;
 }
-const dictionaryCandidates = (blocks, raw, region) => dictionaryCall('candidates', {blocks, raw, region}).catch(() => []);
+// Not before the dictionary is in: the camera's frames never wait for it (a slow first download stalled live reading).
+const dictionaryCandidates = (blocks, raw, region) => (dictionaryVersion ? dictionaryCall('candidates', {blocks, raw, region}).catch(() => []) : Promise.resolve([]));
 const withinDistrict = (actual, selected) => actual === selected || actual.startsWith(`${selected} `);
 function districtsOf(province) {
   const keys = Object.keys(dictionaryTree?.provinces?.[province] || {});
@@ -1627,7 +1628,7 @@ Promise.resolve(navigator.permissions?.query?.({name: 'camera'})).catch(() => nu
 
 // ---- offline readiness (required files only; Tesseract is cached when first used) ----
 // The service worker's own cache name (sw.js), so files prepared here are the ones it serves.
-const CACHE = 'roadname-assets-v40'; let swReady = null, cacheReady = false, updateReady = false;
+const CACHE = 'roadname-assets-v40', CACHE_NAME = `${CACHE}@${new URL('./', location.href).pathname}`; let swReady = null, cacheReady = false, updateReady = false;
 const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 if ('serviceWorker' in navigator) swReady = navigator.serviceWorker.register('./sw.js').then(() => Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))])).catch(() => { $('cacheMessage').textContent = '오프라인 준비를 사용할 수 없습니다. 온라인 인식은 가능합니다.'; return null; });
 async function cacheFiles() { const res = await fetch('./cache-list.json'); if (!res.ok) throw new Error('파일 목록을 읽을 수 없습니다.'); return res.json(); }
@@ -1639,7 +1640,7 @@ if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
 async function checkCache() {
   if (!('caches' in window) || !('serviceWorker' in navigator) || cacheBusy) return;
   try {
-    const {required} = await cacheFiles(), cache = await caches.open(CACHE); let found = 0;
+    const {required} = await cacheFiles(), cache = await caches.open(CACHE_NAME); let found = 0;
     for (const url of required) if (await cache.match(url)) found++;
     cacheReady = found === required.length;
     if (cacheReady) { showBadge('오프라인 준비됨', 'ready'); $('cacheMessage').textContent = '오프라인 준비 완료'; }
@@ -1650,7 +1651,7 @@ async function prepare() {
   if (busy || cacheBusy) return; cacheBusy = true; setBusy(false); error('');
   try {
     const reg = await swReady; if (!reg) throw new Error('Safari에서 이 페이지를 열어 다시 시도해주세요.');
-    const {required, optional = []} = await cacheFiles(), cache = await caches.open(CACHE); let done = 0;
+    const {required, optional = []} = await cacheFiles(), cache = await caches.open(CACHE_NAME); let done = 0;
     for (const url of required) {
       showBadge(`받는 중 ${++done}/${required.length}`, 'busy'); $('cacheMessage').textContent = `오프라인 준비 중 ${done}/${required.length} · 약 32 MB`;
       if (!await cache.match(url)) {
