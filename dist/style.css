@@ -348,3 +348,19 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
 .setting-card>.setting-row label{white-space:nowrap}
 .setting-card>.setting-row input{max-width:96px}
 .old-browser{margin:16px;padding:14px 16px;border-radius:12px;background:#FCEBEB;color:#B42318;font-weight:700;font-size:16px;line-height:1.5}
+/* 47: dimmed while the next letter is checked */
+#sortingCard.checking{opacity:.5}
+/* 49: in sorting mode the card sits right under the camera */
+#sortingCard.top{margin:10px 0 4px}
+/* 55: many columns keep cells a finger wide and scroll sideways; dragging is told under the grid */
+.rack-grid-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.rack-drag-hint{margin:6px 0 0;font-size:13px;color:var(--muted)}
+/* 53: iPhone zooms the page into any box under 16px; boxes are 16px there */
+@supports (-webkit-touch-callout: none){input,select,textarea{font-size:max(16px,1em) !important}}
+/* 58: a phone turned sideways shows the camera and the result side by side */
+@media (orientation:landscape) and (max-height:600px){
+ .app-shell{max-width:none;display:grid;grid-template-columns:minmax(0,44%) minmax(0,56%);grid-template-rows:auto minmax(0,1fr);height:100dvh}
+ .app-shell>.toolbar{grid-column:1/-1}
+ .app-shell>.camera-pane{height:auto;min-height:0}
+ .app-shell>.information-panel{min-height:0;overflow:hidden}
+}

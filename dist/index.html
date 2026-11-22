@@ -178,10 +178,10 @@
   <div id="rackSizeSummary" class="rack-size"><strong id="rackSizeText"></strong><button id="rackResize" class="text-button">크기 변경</button></div>
   <div id="rackSizeRow" class="rack-size-row"><input id="rackColumns" type="text" inputmode="numeric" maxlength="2" aria-label="가로 칸" placeholder="가로 칸"><span aria-hidden="true">×</span><input id="rackRows" type="text" inputmode="numeric" maxlength="2" aria-label="세로 칸" placeholder="세로 칸"><button id="rackApply" class="primary">적용</button></div>
   <p id="rackSizeMessage" class="cache-message" role="status"></p>
-  <div class="rack-guide"><button id="rackGuideTitle" class="rack-guide-title">적는 법</button><dl id="rackGuideBody"><dt>우정1길 1~19</dt><dd>1번부터 19번까지 · 양 끝이 홀수면 홀수만</dd><dt>우정1길 28~2</dt><dd>거꾸로 써도 같음 (2~28 짝수만)</dd><dt>누정동 127-3</dt><dd>127번지 부번 3</dd><dt>누정동 127-1~127-13</dt><dd>127번지 부번 1부터 13까지</dd><dt>우정1길 2~20, 우정길 88</dt><dd>여러 주소는 쉼표로</dd><dt>칸을 길게 누르고 끌기</dt><dd>여러 칸에 아파트를 한 번에 지정</dd></dl></div>
   <div id="rackCells">
   <div class="rack-progress"><span id="rackCount"></span><div class="rack-bar"><div id="rackBar"></div></div></div>
-  <div id="rackGrid" class="rack-grid"></div>
+  <div class="rack-grid-scroll"><div id="rackGrid" class="rack-grid"></div></div>
+  <p class="rack-drag-hint">칸을 길게 눌러 끌면 여러 칸을 아파트로 묶어요</p>
   <div id="cellEditor" class="cell-editor">
   <div id="cellTitle" class="cell-title"></div>
   <textarea id="cellLabel" rows="2" placeholder="우정1길 1~19, 누정동 127-3" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
@@ -189,6 +189,7 @@
   <p id="cellMessage" class="cache-message" role="status"></p>
   <div class="cell-buttons"><button id="cellPrevious" class="secondary">이전</button><button id="cellNext" class="primary">저장하고 다음 칸</button></div>
   </div>
+  <div class="rack-guide"><button id="rackGuideTitle" class="rack-guide-title">적는 법</button><dl id="rackGuideBody"><dt>우정1길 1~19</dt><dd>1번부터 19번까지 · 양 끝이 홀수면 홀수만</dd><dt>우정1길 28~2</dt><dd>거꾸로 써도 같음 (2~28 짝수만)</dd><dt>누정동 127-3</dt><dd>127번지 부번 3</dd><dt>누정동 127-1~127-13</dt><dd>127번지 부번 1부터 13까지</dd><dt>우정1길 2~20, 우정길 88</dt><dd>여러 주소는 쉼표로</dd><dt>칸을 길게 누르고 끌기</dt><dd>여러 칸에 아파트를 한 번에 지정</dd></dl></div>
   <div class="rack-actions"><button id="exportRack" class="secondary">내보내기</button><button id="deleteRack" class="secondary">삭제</button></div>
   <p id="exportMessage" class="cache-message" role="status"></p>
   </div>

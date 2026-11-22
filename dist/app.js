@@ -179,7 +179,9 @@ function setStatus(text) { $('statusText').textContent = text || ''; }
 function showDetails(details) { $('detailText').hidden = !details; $('detailText').textContent = details ? `상세주소·건물: ${details}` : ''; }
 function setMapAddress(address) { mapAddress = address; $('mapButton').disabled = !address; $('copyResult').disabled = !address; }
 function setConverted(text, tone = '') {
-  if (tone !== 'success' && shownResult) { shownResult = null; showSorting(); showNote(); }
+  // 47: while the next letter is checked the cell card stays, dimmed, instead of folding away and jumping back.
+  if (tone === 'checking') { $('sortingCard').classList.add('checking'); tone = ''; }
+  else if (tone !== 'success' && shownResult) { shownResult = null; showSorting(); showNote(); }
   const view = $('convertedText'), name = tone === 'success' ? parseParts(text)?.name : null, start = name ? text.indexOf(name) : -1;
   view.className = `converted-text${tone ? ` ${tone}` : ''}`;
   if (start < 0) { view.textContent = text; return; }
@@ -270,7 +272,7 @@ async function convertAddress(raw, confirmed = false, source = lastOcr?.text || 
   if (!byName && (!parsed || parseParts(parsed)?.number == null)) { setStatus('도로명·지명과 건물번호·번지를 함께 입력해 주세요.'); return; }
   const id = ++requestSeq;
   awaitingNetwork = false; setMapAddress(null); setConverting(true);
-  setConverted('주소를 확인하고 있습니다…'); setStatus('');
+  setConverted('주소를 확인하고 있습니다…', sortingOn() && shownResult ? 'checking' : ''); setStatus('');
   diag.begin(parsed);
   // The region's own data first (offline too); the servers for anything it cannot tell.
   const local = byName || lookupLocal(localData, parsed);
@@ -321,7 +323,8 @@ function showError(message) {
   awaitingNetwork = false; setMapAddress(null); diag.finish('검색 실패', message);
   const notFound = message === '일치하는 주소 없음';
   setConverted(notFound ? message : '변환할 수 없습니다', 'failure');
-  setStatus(notFound ? '' : message);
+  setStatus(notFound || sortingOn() ? '' : message);
+  if (sortingOn()) showNoAddress();
   signal(false);
 }
 
@@ -911,7 +914,7 @@ $('recentLines').onchange = () => {
   settingsValues(); showRecent();
 };
 $('recentMidnight').onchange = () => store.set(KEYS.recentMidnight, $('recentMidnight').checked ? '1' : '');
-$('clearRecent').onclick = () => { saveRecent([]); $('recentMessage').textContent = '최근 주소를 지웠습니다.'; settingsValues(); showRecent(); };
+$('clearRecent').onclick = () => { if (!confirm('최근 기록을 모두 지울까요?')) return; saveRecent([]); $('recentMessage').textContent = '최근 주소를 지웠습니다.'; settingsValues(); showRecent(); };
 
 /** "기억 목록": corrections ("우저4긱 → 우정4길") and names, newest first; × forgets one. */
 function renderMemoryList() {
@@ -978,6 +981,7 @@ $('saveApartment').onclick = () => {
 $('deleteApartment').onclick = () => {
   const rack = activeRack();
   if (!rack || editingApartment == null) return;
+  if (!confirm(`${rack.apartments[editingApartment]?.name || '이 아파트'} 설정을 지울까요?`)) return;
   changeRack(rack.id, r => { r.apartments.splice(editingApartment, 1); });
   showSorting(); showSettingsPage('apartments');
 };
@@ -1076,7 +1080,7 @@ function alertSummary() {
 $('alertVibrationRow').hidden = !navigator.vibrate;
 $('memoryToggle').checked = memoryOn();
 $('memoryToggle').onchange = () => { store.set(KEYS.memoryOff, $('memoryToggle').checked ? '' : '1'); settingsValues(); };
-$('clearMemory').onclick = () => { memory.clear(); store.set(KEYS.memory, ''); $('memoryMessage').textContent = '기억을 지웠습니다.'; };
+$('clearMemory').onclick = () => { if (!confirm('기억한 이름과 고친 글자를 모두 지울까요?')) return; memory.clear(); store.set(KEYS.memory, ''); $('memoryMessage').textContent = '기억을 지웠습니다.'; };
 // Keep the screen on while the app is in front (mail in the other hand); the browser releases it when hidden.
 let wakeLock = null;
 async function keepAwake() {
@@ -1172,11 +1176,37 @@ function cellText(cell, tail = '') {
  * moving on to the next cell always changes the color). `fresh` (a letter just read): a cell other than the last
  * letter's deepens the card for a moment and the number pulses either way. Returns whether the cell changed.
  */
+/**
+ * 49 · 54: in sorting mode the cell card is the first thing under the camera and the recognition candidates come right
+ * after it, so neither is below the fold on a small phone; otherwise both go back to their places.
+ */
+const sortingHome = {card: null, candidates: null};
+function placeSortingCard(top) {
+  const card = $('sortingCard'), candidates = $('candidatePanel'), scroll = $('informationScroll');
+  sortingHome.card ??= {parent: card.parentNode, next: card.nextSibling};
+  sortingHome.candidates ??= {parent: candidates.parentNode, next: candidates.nextSibling};
+  if (top) {
+    const first = scroll.querySelector('section.field');
+    if (card.parentNode !== scroll) { scroll.insertBefore(card, first); scroll.insertBefore(candidates, first); card.classList.add('top'); }
+  } else if (card.parentNode === scroll) {
+    sortingHome.card.parent.insertBefore(card, sortingHome.card.next); sortingHome.candidates.parent.insertBefore(candidates, sortingHome.candidates.next);
+    card.classList.remove('top');
+  }
+}
+/** 50: an address not found says so, large, where the cell would be (and nowhere else). */
+function showNoAddress() {
+  const card = $('sortingCard'), cell = $('sortingCell');
+  placeSortingCard(true);
+  cell.textContent = '주소 없음'; cell.removeAttribute('aria-label'); cell.onclick = null; cell.hidden = false;
+  card.className = 'sorting-card not-mine state top';
+  $('sortingAssign').hidden = true;
+}
 function showSorting(fresh = false) {
   const card = $('sortingCard'), cell = $('sortingCell'), assign = $('sortingAssign'), state = sortingState(), r = shownResult;
+  placeSortingCard(state.enabled);
   $('appTitle').textContent = state.enabled ? '순로구분' : '도로명변환기';
   showRegion();
-  if (!state.enabled || !r) { card.className = ''; cell.hidden = true; assign.hidden = true; return false; }
+  if (!state.enabled || !r) { card.className = state.enabled ? 'top' : ''; cell.hidden = true; assign.hidden = true; return false; }
   const rack = activeRack(state);
   const verdict = rack ? locate(rack, roadForm(r), parcelForm(r), `${sortingSource}\n${$('addressInput').value}`) : {state: 'notConfigured'};
   cell.onclick = null;
@@ -1192,7 +1222,7 @@ function showSorting(fresh = false) {
     cell.removeAttribute('aria-label');
     if (verdict.state === 'notConfigured') cell.onclick = () => { if (rack) { editingRack = rack.id; openSettings('rack'); } else openSettings('racks'); };
   }
-  card.className = `sorting-card ${tone}${verdict.cell ? '' : ' state'}`;
+  card.className = `sorting-card ${tone}${verdict.cell ? '' : ' state'}${card.parentNode === $('informationScroll') ? ' top' : ''}`;
   cell.hidden = false;
   assign.hidden = verdict.state === 'notConfigured' || (verdict.cell && !verdict.outside);
   if (!fresh || !verdict.cell) return false;
@@ -1233,6 +1263,8 @@ function sortingValues() {
 $('sortingModeToggle').onchange = () => {
   const state = sortingState();
   state.enabled = $('sortingModeToggle').checked; saveSorting(state);
+  // 48: sorting reads letter after letter, so continuous scan comes on with it (it can be turned off again).
+  if (state.enabled && !continuousScan()) { store.set(KEYS.continuous, '1'); $('continuousScan').checked = true; if (liveCamera() && !scanning && !selected) startScanning(); updateScanUi(); }
   showSorting();
   // Switched on without a rack: straight to making one.
   if (state.enabled && !activeRack()) { editingRack = addRack('내 구역').id; showSettingsPage('rack'); }
@@ -1307,7 +1339,8 @@ function renderRack(load) {
 }
 /** Numbers only (a 6×6 rack leaves no room for text): cells with addresses in their color, the chosen one outlined. */
 function renderGrid(grid, rack, chosen, choose) {
-  grid.style.gridTemplateColumns = `repeat(${rack.columns}, minmax(0, 1fr))`;
+  // A cell never narrower than a finger: with many columns the grid scrolls sideways.
+  grid.style.gridTemplateColumns = `repeat(${rack.columns}, minmax(44px, 1fr))`;
   grid.replaceChildren(...Array.from({length: cellCount(rack)}, (_, i) => {
     const cell = i + 1, label = String(rack.labels?.[cell] || '').trim(), button = document.createElement('button');
     button.textContent = String(cell);
@@ -1334,7 +1367,12 @@ function saveCell() {
   $('cellMessage').textContent = others.length ? `${others.join(', ')}번 칸과 겹칩니다` : '';
   return true;
 }
-function chooseCell(cell) { if (cell === editingCell) return; saveCell(); editingCell = cell; renderRack(false); }
+function chooseCell(cell) {
+  if (cell === editingCell) return;
+  saveCell(); editingCell = cell; renderRack(false);
+  // The box of the cell just chosen comes into view (it is below the grid).
+  $('cellEditor').scrollIntoView({block: 'nearest', behavior: 'smooth'});
+}
 $('cellLabel').oninput = renderChips;
 $('cellNext').onclick = () => {
   if (!saveCell()) return;
@@ -1348,6 +1386,10 @@ $('rackResize').onclick = () => { rackResizing = true; renderRack(false); };
 $('rackApply').onclick = () => {
   const columns = parseInt($('rackColumns').value, 10), rows = parseInt($('rackRows').value, 10);
   if (!(columns >= 1 && columns <= 12 && rows >= 1 && rows <= 12)) { $('rackSizeMessage').textContent = '가로·세로는 1~12칸'; return; }
+  const before = rackInEdit();
+  // 57: cells are numbered from the top left, so another size moves every label to another place.
+  if (before && configured(before) && filledCount(before) > 0 && (before.columns !== columns || before.rows !== rows) &&
+    !confirm('칸 번호는 왼쪽 위부터 매겨서, 크기를 바꾸면 적어 둔 칸이 다른 자리로 가요. 바꿀까요?')) return;
   changeRack(editingRack, r => { r.columns = columns; r.rows = rows; });
   rackResizing = false; $('rackSizeMessage').textContent = ''; renderRack(false); showSorting();
 };
