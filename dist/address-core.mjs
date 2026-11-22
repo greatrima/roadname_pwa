@@ -676,3 +676,217 @@ export class AutoConversionPolicy {
   pause() { this.clearPending(); }
   reset() { this.clearPending(); this.lastStartedAt = null; this.manuallyChosenFrom = []; }
 }
+
+// ---- Romanizer / EnglishAddress (EMS) ----
+// Korean names in the Revised Romanization of the road signs ('우정공원로' -> 'ujeonggongwon-ro'), sound changes
+// inside a name only (신라 silla, 독립 dongnip); the road or place suffix joins with a hyphen ('종로' -> 'jong-ro').
+const RR_INITIALS = ['g', 'kk', 'n', 'd', 'tt', 'r', 'm', 'b', 'pp', 's', 'ss', '', 'j', 'jj', 'ch', 'k', 't', 'p', 'h'];
+const RR_VOWELS = ['a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 'yo', 'u', 'wo', 'we', 'wi', 'yu', 'eu', 'ui', 'i'];
+const RR_FINALS = ['', 'k', 'k', 'k', 'n', 'n', 'n', 't', 'l', 'k', 'm', 'l', 'l', 'l', 'p', 'l', 'm', 'p', 'p', 't', 't', 'ng', 't', 't', 'k', 't', 'p', 't'];
+const RR_LINKED = ['', 'g', 'kk', 'ks', 'n', 'nj', 'nh', 'd', 'r', 'lg', 'lm', 'lb', 'ls', 'lt', 'lp', 'lh', 'm', 'b', 'ps', 's', 'ss', 'ng', 'j', 'ch', 'k', 't', 'p', 'h'];
+const RR_SUFFIXES = ['대로', '로', '길', '동', '리', '읍', '면', '가'];
+const isSyllable = c => c >= '가' && c <= '힣';
+const syllable = c => c.charCodeAt(0) - 0xAC00;
+
+export function romanizeWord(text) {
+  let out = '';
+  const chars = [...text];
+  chars.forEach((c, i) => {
+    if (!isSyllable(c)) { out += c.toLowerCase(); return; }
+    const code = syllable(c), initial = Math.floor(code / 588), vowel = Math.floor((code % 588) / 28), fin = code % 28;
+    const prevFinal = i > 0 && isSyllable(chars[i - 1]) ? syllable(chars[i - 1]) % 28 : 0;
+    const next = i + 1 < chars.length && isSyllable(chars[i + 1]) ? Math.floor(syllable(chars[i + 1]) / 588) : null;
+    let start;
+    if (initial === 11) start = '';
+    else if (initial === 5) start = ['l', 'n'].includes(RR_FINALS[prevFinal]) ? 'l' : RR_FINALS[prevFinal] === '' ? 'r' : 'n';
+    else if (initial === 2 && RR_FINALS[prevFinal] === 'l') start = 'l';
+    else start = RR_INITIALS[initial];
+    let end = '';
+    if (fin) {
+      const sound = RR_FINALS[fin];
+      if (next === 11) end = RR_LINKED[fin];
+      else if (next === 2 || next === 6) end = ({k: 'ng', t: 'n', p: 'm'})[sound] || sound;
+      else if (next === 5) end = ({k: 'ng', t: 'n', p: 'm', n: 'l'})[sound] || sound;
+      else end = sound;
+    }
+    out += start + RR_VOWELS[vowel] + end;
+  });
+  return out;
+}
+
+export function romanize(name) {
+  const numbered = /^(.*?(?:대로|로))(\d+)(번길|길)$/.exec(name);
+  if (numbered) return `${romanize(numbered[1])} ${numbered[2]}${numbered[3] === '번길' ? 'beon-gil' : '-gil'}`;
+  const suffix = RR_SUFFIXES.find(s => name.length > s.length && name.endsWith(s));
+  if (!suffix) return romanizeWord(name);
+  const stem = name.slice(0, -suffix.length), digits = /\d+$/.exec(stem)?.[0] || '';
+  return digits ? `${romanizeWord(stem.slice(0, -digits.length))}${digits}-${romanizeWord(suffix)}` : `${romanizeWord(stem)}-${romanizeWord(suffix)}`;
+}
+
+// EMS and other parcels from abroad: an address in English is read against the chosen district's romanized roads
+// and places, spelling forgiven, and turned into the Korean address the app reads (as on Android).
+const EN_LATIN = /[A-Za-z]/g, EN_HANGUL = /[가-힣]/g;
+const EN_MARKER = /(?:daero|ro|gil|dong|eup|myeon|ri|gu|si|korea)\b|\d{5}/i;
+const EN_COUNTRY = /\b(?:republic\s+of\s+korea|south\s+korea|s\.?\s*korea|korea|rok)\b/gi;
+const EN_PHONE_SOURCE = String.raw`(?:tel|phone|mobile|\+82)[^\n]*|\b0\d{1,2}[-. ]\d{3,4}[-. ]\d{4}\b`;
+const EN_PHONE = new RegExp(EN_PHONE_SOURCE, 'gi');
+const EN_PHONE_LINE = new RegExp(`^(?:${EN_PHONE_SOURCE})$`, 'i');
+const EN_POSTAL = /(?<!\d)\d{5}(?!\d)/g;
+const EN_TRANSLATED = [
+  ['national university', 'daehak'], ['university', 'daehak'], ['univ', 'daehak'], ['city hall', 'sicheong'],
+  ['park', 'gongwon'], ['station', 'yeok'], ['stn', 'yeok'], ['market', 'sijang'], ['hospital', 'byeongwon'],
+  ['school', 'hakgyo'], ['river', 'gang'], ['bridge', 'gyo'], ['mountain', 'san'], ['mt', 'san'], ['lake', 'hosu'],
+  ['church', 'gyohoe'], ['temple', 'sa'], ['port', 'hang'], ['harbor', 'hang'], ['harbour', 'hang'],
+  ['airport', 'gonghang'], ['central', 'jungang'], ['center', 'senteo'], ['centre', 'senteo'],
+  ['avenue', 'daero'], ['ave', 'daero'], ['boulevard', 'daero'], ['blvd', 'daero'],
+  ['road', 'ro'], ['rd', 'ro'], ['street', 'ro'], ['st', 'ro'], ['lane', 'gil'], ['ln', 'gil'],
+].map(([from, to]) => [new RegExp(String.raw`\b${from.replace(' ', String.raw`\s+`)}\b`, 'g'), to]);
+const EN_FOLDS = [['woo', 'u'], ['oo', 'u'], ['ee', 'i'], ['eo', 'o'], ['ae', 'e'], ['eu', 'u'], ['ui', 'i'], ['wo', 'o'],
+  ['ch', 'j'], ['sh', 's'], ['k', 'g'], ['p', 'b'], ['t', 'd'], ['r', 'l'], ['x', 's'], ['z', 'j'], ['f', 'b'], ['v', 'b'],
+  ['c', 'g'], ['ll', 'l'], ['y', 'i']];
+
+export function looksEnglish(text) {
+  const letters = (text.match(EN_LATIN) || []).length;
+  return letters >= 6 && (text.match(EN_HANGUL) || []).length * 3 < letters && EN_MARKER.test(text);
+}
+
+export function normalizeEnglish(text) {
+  let s = text.toLowerCase().replace(/[–—]/g, '-').replace(/’/g, "'").replace(EN_PHONE, ' ').replace(EN_COUNTRY, ' ');
+  for (const [word, korean] of EN_TRANSLATED) s = s.replace(word, korean);
+  return s;
+}
+
+function foldWithPositions(text, positions) {
+  let out = '';
+  const kept = [];
+  for (let i = 0; i < text.length;) {
+    const fold = EN_FOLDS.find(([from]) => text.startsWith(from, i));
+    const piece = fold ? fold[1] : text[i];
+    const from = positions ? positions[i] : i;
+    for (const ch of piece) { out += ch; kept.push(from); }
+    i += fold ? fold[0].length : 1;
+  }
+  return [out, kept];
+}
+export const foldEnglish = text => foldWithPositions(text.toLowerCase().replace(/[^a-z0-9]/g, ''), null)[0];
+
+function squeezed(text) {
+  let out = '';
+  const positions = [];
+  [...text].forEach((c, i) => { if (/[a-z0-9]/.test(c)) { out += c; positions.push(i); } });
+  return foldWithPositions(out, positions);
+}
+
+/** The cheapest stretch of `text` that the place's key can be edited into (approximate substring match). */
+function within(text, place) {
+  const p = place.key, n = text.length;
+  if (!n) return null;
+  let cost = new Array(n + 1).fill(0), start = Array.from({length: n + 1}, (_, j) => j);
+  for (let i = 1; i <= p.length; i++) {
+    const next = new Array(n + 1), nextStart = new Array(n + 1);
+    next[0] = i; nextStart[0] = 0;
+    for (let j = 1; j <= n; j++) {
+      const sub = cost[j - 1] + (p[i - 1] === text[j - 1] ? 0 : 1), del = cost[j] + 1, ins = next[j - 1] + 1;
+      if (sub <= del && sub <= ins) { next[j] = sub; nextStart[j] = start[j - 1]; }
+      else if (del <= ins) { next[j] = del; nextStart[j] = start[j]; }
+      else { next[j] = ins; nextStart[j] = nextStart[j - 1]; }
+    }
+    cost = next; start = nextStart;
+  }
+  let end = -1;
+  for (let j = 1; j <= n; j++) if (end < 0 || cost[j] < cost[end]) end = j;
+  if (end <= 0 || start[end] >= end) return null;
+  return {place, start: start[end], end, cost: cost[end]};
+}
+
+function bestPlace(text, places) {
+  let best = null;
+  for (const place of places) {
+    if (place.key.length < 4) continue;
+    const hit = within(text, place);
+    if (!hit || hit.cost > Math.max(1, Math.floor(place.key.length / 5))) continue;
+    // The kind of name must be written as it is: "-ro" is no "-dong" ("Jipbae-dong" is not "Jipbaedong-ro").
+    if (hit.end < 2 || text.slice(hit.end - 2, hit.end) !== place.key.slice(-2)) continue;
+    if (!best || hit.cost * best.place.key.length < best.cost * place.key.length ||
+      (hit.cost * best.place.key.length === best.cost * place.key.length && place.key.length > best.place.key.length)) best = hit;
+  }
+  return best;
+}
+
+const EN_NUMBERED_ROAD = /^[\s,.-]*(\d{1,4})\s*-?\s*(beon)?\s*-?\s*gil\b/;
+const EN_BUILDING_AFTER = /^[\s,.-]*((?:b\s*)?\d{1,4}(?:\s*-\s*\d{1,4})?)(?!\d|\s*-?\s*(?:dong|ho|f\b|fl|floor|cheung|beon|gil))/;
+const EN_BUILDING_BEFORE = /(?<![\d#-])(\d{1,4}(?:-\d{1,4})?)[\s,]*$/;
+const EN_PARCEL_AFTER = /^[\s,.-]*((?:san\s*)?\d{1,4}(?:\s*-\s*\d{1,4})?)(?!\d|\s*-?\s*(?:dong|ho))/;
+const EN_DONG = /(?<![\d-])(\d{1,4})\s*-?\s*(?:dong|d|bldg|building)\b|(?<![a-z-])(?:bldg|building|dong)\.?\s*(\d{1,4})\b/;
+const EN_HO = /(?<![\d-])(b?\d{1,5})\s*-?\s*ho\b|(?:#|\b(?:unit|room|rm|suite|ste|ho)\.?)\s*#?\s*(b?\d{1,5})(?!\s*-\s*\d)/;
+const EN_PAIR = /(?:\b(?:apt|apartment|unit|#)\.?\s*#?\s*)?(?<![\d-])(\d{1,4})\s*-\s*(b?\d{2,5})(?![\d-])/g;
+
+const buildingNumber = written => { const n = written.replace(/\s+/g, ''); return n.startsWith('b') ? `지하 ${n.slice(1)}` : n; };
+
+function englishUnits(text, building) {
+  const clean = text.replace(EN_POSTAL, ' ');
+  const d = EN_DONG.exec(clean), h = EN_HO.exec(clean);
+  let dong = d ? d[1] || d[2] : null, ho = h ? h[1] || h[2] : null, unsure = false;
+  if (dong == null || ho == null) {
+    const pair = [...clean.matchAll(EN_PAIR)].find(m => `${m[1]}-${m[2]}` !== building?.replace(/\s/g, ''));
+    if (pair) {
+      dong ??= pair[1];
+      ho ??= pair[2];
+      unsure = !pair[0].trim().startsWith('apt') && !pair[0].includes('#');
+    }
+  }
+  const parts = [dong != null ? `${dong}동` : null, ho != null ? (ho.startsWith('b') ? `지하 ${ho.slice(1)}호` : `${ho}호`) : null].filter(Boolean);
+  return [parts.join(' '), unsure && parts.length > 0];
+}
+
+function englishLine(text) {
+  return text.split('\n').map(l => l.trim())
+    .filter(l => l && !EN_PHONE_LINE.test(l.toLowerCase()) && /[A-Za-z]/.test(l))
+    .join(', ').replace(/\s+/g, ' ');
+}
+
+/** Romanized keys of a district's roads ("우정로12번길" is found as 우정로; "중앙1길" stays a name of its own). */
+export function englishPlaces(roads, localities) {
+  return {
+    roads: new Set(roads),
+    roadPlaces: [...new Set(roads.map(r => r.replace(/(?<=로)\d+(?:번길|길)$/, '')))].map(name => ({name, key: foldEnglish(romanize(name))})),
+    localityPlaces: localities.map(name => ({name, key: foldEnglish(romanize(name.split(' ').pop()))})),
+  };
+}
+
+/** {korean, english, unitUnsure} for an address in English, or null; `places` from englishPlaces. */
+export function englishAddress(text, district, places) {
+  if (!looksEnglish(text)) return null;
+  const english = englishLine(text), normal = normalizeEnglish(text);
+  const [key, positions] = squeezed(normal);
+  const roadHit = bestPlace(key, places.roadPlaces);
+  if (roadHit) {
+    const after = normal.slice(positions[roadHit.end - 1] + 1), before = normal.slice(0, positions[roadHit.start]);
+    let road = roadHit.place.name, rest = after;
+    const numbered = EN_NUMBERED_ROAD.exec(after);
+    if (numbered) {
+      const kinds = numbered[2] ? ['번길', '길'] : ['길', '번길'];
+      const found = kinds.map(k => road + numbered[1] + k).find(r => places.roads.has(r));
+      if (found) { road = found; rest = after.slice(numbered.index + numbered[0].length); }
+    }
+    // "12 Woojeong-ro" (number first, as English is written) is read too, after "Woojeong-ro 12".
+    const numberAfter = EN_BUILDING_AFTER.exec(rest), numberBefore = numberAfter ? null : EN_BUILDING_BEFORE.exec(before);
+    const written = (numberAfter || numberBefore)?.[1];
+    const building = written != null ? buildingNumber(written) : null;
+    const left = (numberBefore ? before.slice(0, numberBefore.index) : before) + ' ' +
+      (numberAfter ? rest.slice(numberAfter.index + numberAfter[0].length) : rest);
+    const [units, unsure] = englishUnits(left, building);
+    return {korean: [district, road, building || '', units].filter(Boolean).join(' '), english, unitUnsure: unsure};
+  }
+  const placeHit = bestPlace(key, places.localityPlaces);
+  if (!placeHit) return null;
+  const after = normal.slice(positions[placeHit.end - 1] + 1), before = normal.slice(0, positions[placeHit.start]);
+  const parcelMatch = EN_PARCEL_AFTER.exec(after), parcelBefore = parcelMatch ? null : EN_BUILDING_BEFORE.exec(before);
+  const written = (parcelMatch || parcelBefore)?.[1];
+  if (written == null) return null;
+  const parcel = written.replace(/\s+/g, '').replace(/^san/, '산 ');
+  const left = (parcelBefore ? before.slice(0, parcelBefore.index) : before) + ' ' +
+    (parcelMatch ? after.slice(parcelMatch.index + parcelMatch[0].length) : after);
+  const [units, unsure] = englishUnits(left, written.replace(/\s+/g, ''));
+  return {korean: [district, placeHit.place.name, parcel, units].filter(Boolean).join(' '), english, unitUnsure: unsure};
+}

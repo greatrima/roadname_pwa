@@ -2,7 +2,10 @@
 // and answers correction/suggestion requests. Updates come from the Android repository.
 import {AddressDictionary, AddressCandidateEngine, validateDictionaryText, isOlderVersion} from './address-dictionary.mjs';
 import {localitySuggestions} from './address-suggest.mjs';
-import {candidate as makeCandidate, parseParts, stripAddressLabels} from './address-core.mjs';
+import {candidate as makeCandidate, parseParts, stripAddressLabels, englishAddress, englishPlaces} from './address-core.mjs';
+
+// EMS: the chosen district's roads and places, romanized once per district.
+let englishCache = null;
 
 const BUNDLED = './models/address_dictionary.tsv.gz';
 const BUNDLED_VERSION = './models/dictionary-version.json';
@@ -118,6 +121,15 @@ self.onmessage = async ({data}) => {
       const texts = data.texts || [];
       const joined = stripAddressLabels(texts.join('\n'), name => dictionary.isExactAddressName(name)).split('\n');
       result = joined.length === texts.length ? joined : texts.map(text => stripAddressLabels(text, name => dictionary.isExactAddressName(name)));
+    } else if (type === 'english') {
+      // An address written in English (EMS), read as the Korean one of the chosen district; null otherwise.
+      await ready();
+      const {province = '', district = ''} = data.region || {};
+      const key = `${province}|${district}`;
+      if (englishCache?.key !== key) {
+        englishCache = {key, places: englishPlaces(dictionary.roads(province, district), dictionary.localities(province, district))};
+      }
+      result = district ? englishAddress(data.text || '', district, englishCache.places) : null;
     } else if (type === 'update') result = await checkUpdate();
     else throw new Error(`unknown ${type}`);
     postMessage({id, result});

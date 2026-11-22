@@ -129,6 +129,12 @@ export class AddressDictionary {
     for (const [key, bucket] of this.buckets.get(province) || []) if (withinDistrict(key, district)) for (const n of bucket.localities) names.add(n);
     return [...names].sort(compareText);
   }
+  /** Every road name of the district, for the English address reader (as on Android). */
+  roads(province, district) {
+    const names = new Set();
+    for (const [key, bucket] of this.buckets.get(province) || []) if (withinDistrict(key, district)) for (const n of bucket.roads.keys()) names.add(n);
+    return [...names].sort(compareText);
+  }
   /** {provinces: {province: {district: [names]}}} used by the locality suggestion module. */
   localityTree() {
     const provinces = {};

@@ -151,6 +151,7 @@ dialog h3{font-size:13px;color:#9c3260;margin:22px 0 2px;letter-spacing:.2px}
 .address-box:focus-within{border-color:#d4347a;box-shadow:0 0 0 2px #ffd1e3}
 .box-head{display:flex;align-items:center;justify-content:space-between;padding-left:12px;min-height:38px}
 .box-head label{font-size:12px;font-weight:700;color:#9c3260}
+.english-source{margin:0;padding:0 12px 2px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#7a8394;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .box-head .copy-button,.result-row .copy-button{min-height:38px;padding:8px 10px}
 .result-row{display:flex;align-items:flex-start;gap:6px;padding-top:12px}
 .result-row .converted-text{flex:1;padding-top:6px}

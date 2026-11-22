@@ -2,7 +2,7 @@ import {
   COMPLETE, Kind, candidate as makeCandidate, extract, extractCandidate, extractDetails, parseParts, identity,
   restoreStructuredText, parseRegion, regionName, withDefaultRegion, candidatesFromBlocks, candidatesFromSpatialBlocks,
   automaticCandidate, assembleElements, rowsFromBoxes, CandidateTracker, AutoConversionPolicy, isSameAddressFamily,
-  LABEL_LETTER,
+  LABEL_LETTER, looksEnglish,
 } from './address-core.mjs';
 import {AddressConverter, SOURCE_LABEL} from './address-convert.mjs';
 import {AddressMemory, numberedWords} from './address-memory.mjs';
@@ -13,11 +13,14 @@ import {regionLine} from './region-label.mjs';
 
 const $ = id => document.getElementById(id);
 // Shown in settings; bump together with the service-worker cache version when deploying changes.
-const APP_VERSION = '3.1.1';
+const APP_VERSION = '3.2.0';
 // "업데이트 내역" of this version (the notes, written like the Android release notes); blank shows nothing.
 const WHATS_NEW = `
+### 새 기능
+- EMS 등 국제우편의 영문 주소 인식 (영문 원문은 결과 위에 작게 표시)
+
 ### 고친 점
-- 잔버그 수정
+- 송장의 받는분·받는곳·수취인·발송인 같은 칸 이름 글자가 주소 앞에 붙어 인식되던 문제 수정
 `;
 $('appVersion').textContent = APP_VERSION; $('webVersion').textContent = APP_VERSION;
 const photo = $('photo'), ctx = photo.getContext('2d', {willReadFrequently: true});
@@ -163,7 +166,7 @@ const apiAlternatives = new Map();
 const tracker = new CandidateTracker(), autoPolicy = new AutoConversionPolicy();
 const uniqueCandidates = list => { const seen = new Set(); return list.filter(c => { const k = identity(c); if (seen.has(k)) return false; seen.add(k); return true; }); };
 
-function setInput(text) { $('addressInput').value = text; $('copyAddress').disabled = !text.trim(); }
+function setInput(text) { $('addressInput').value = text; $('copyAddress').disabled = !text.trim(); showEnglishSource(text); }
 function setStatus(text) { $('statusText').textContent = text || ''; }
 function showDetails(details) { $('detailText').hidden = !details; $('detailText').textContent = details ? `상세주소·건물: ${details}` : ''; }
 function setMapAddress(address) { mapAddress = address; $('mapButton').disabled = !address; $('copyResult').disabled = !address; }
@@ -387,8 +390,32 @@ async function labelFree(texts) {
   if (!dictionaryVersion || !texts.some(text => LABEL_LETTER.test(text))) return texts;
   return dictionaryCall('clean', {texts}).catch(() => texts);
 }
+// EMS: the last address read in English, and its road (or place) and number without spaces ("우정공원로12").
+let englishRead = null, englishPlace = '';
+/** A small line with the English as written while `address` is what it was read as; hidden otherwise. */
+function showEnglishSource(address) {
+  const shown = !!englishRead && englishPlace.length >= 3 && (address || '').replace(/\s/g, '').includes(englishPlace);
+  $('englishSource').hidden = !shown;
+  if (shown) $('englishSource').textContent = englishRead.english + (englishRead.unitUnsure ? ' · 동·호 확인' : '');
+}
+/** An address written in English, read as the Korean one of the chosen district by the dictionary worker; null otherwise. */
+async function englishFrom(text, region) {
+  if (!dictionaryVersion || !region.district || !looksEnglish(text)) return null;
+  const read = await dictionaryCall('english', {text, region: {province: region.province, district: region.district}}).catch(() => null);
+  if (!read) return null;
+  englishRead = read;
+  englishPlace = read.korean.slice(region.district.length).trim().split(' ').slice(0, 2).join('');
+  return read.korean;
+}
 async function candidatesFromResult(result, region) {
-  const lines = result.lines?.length ? result.lines : null, texts = await labelFree(lines ? lines.map(line => line.text) : [result.text]);
+  const lines = result.lines?.length ? result.lines : null;
+  const english = await englishFrom(lines ? lines.map(line => line.text).join('\n') : result.text || '', region);
+  if (english) {
+    diag.trace = [];
+    appliedCorrections = [];
+    return {raw: candidatesFromBlocks([english], region), blocks: [english]};
+  }
+  const texts = await labelFree(lines ? lines.map(line => line.text) : [result.text]);
   diag.trace = [];
   appliedCorrections = [];
   // Road and 동 names misread by the camera are put right by the region's own data first.
@@ -743,6 +770,7 @@ $('addressInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e
 $('addressInput').oninput = () => {
   // Editing cancels pending lookups; an old response must not replace the edited address.
   editing = true; requestSeq++; setConverting(false); awaitingNetwork = false; showDetails(''); resetResult(); setStatus(''); diag.finish('편집 중 · 검색 취소', '');
+  $('englishSource').hidden = true;
   $('copyAddress').disabled = !$('addressInput').value.trim();
   showRecent();
 };
@@ -1537,7 +1565,7 @@ Promise.resolve(navigator.permissions?.query?.({name: 'camera'})).catch(() => nu
 
 // ---- offline readiness (required files only; Tesseract is cached when first used) ----
 // The service worker's own cache name (sw.js), so files prepared here are the ones it serves.
-const CACHE = 'roadname-assets-v38'; let swReady = null, cacheReady = false, updateReady = false;
+const CACHE = 'roadname-assets-v39'; let swReady = null, cacheReady = false, updateReady = false;
 const standalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 if ('serviceWorker' in navigator) swReady = navigator.serviceWorker.register('./sw.js').then(() => Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))])).catch(() => { $('cacheMessage').textContent = '오프라인 준비를 사용할 수 없습니다. 온라인 인식은 가능합니다.'; return null; });
 async function cacheFiles() { const res = await fetch('./cache-list.json'); if (!res.ok) throw new Error('파일 목록을 읽을 수 없습니다.'); return res.json(); }
