@@ -364,3 +364,8 @@ select[multiple]{min-height:48px;height:auto;max-height:180px}
  .app-shell>.camera-pane{height:auto;min-height:0}
  .app-shell>.information-panel{min-height:0;overflow:hidden}
 }
+/* 61: the settings header stays while a page scrolls; the back button sits at the left, the title takes the middle */
+#settingsDialog{padding-top:0}
+#settingsDialog>.dialog-head{position:sticky;top:0;z-index:3;background:#F2F3F7;margin:0 -20px 12px;padding:14px 20px 10px}
+#settingsDialog #settingsBack{margin-left:0}
+#settingsDialog .settings-title{flex:1;min-width:0}

@@ -64,10 +64,10 @@
   </div>
   <h3>인식</h3>
   <div class="setting-card">
-  <label class="toggle" data-icon="scan"><input type="checkbox" id="continuousScan">연속 스캔</label>
+  <label class="toggle" data-icon="scan"><input type="checkbox" id="continuousScan">연속 인식</label>
   <button data-open="alerts" data-icon="alert">변환 알림 <span class="row-end"><span class="row-value" id="alertValue"></span><span aria-hidden="true">›</span></span></button>
   <button data-open="assist" data-icon="assist">인식 보조 <span class="row-end"><span class="row-value" id="assistValue"></span><span aria-hidden="true">›</span></span></button>
-  <button data-open="buttons" data-icon="buttons">노출 버튼 관리 <span aria-hidden="true">›</span></button>
+  <button data-open="buttons" data-icon="buttons">화면 버튼 <span aria-hidden="true">›</span></button>
   <div class="setting-row" data-icon="eye"><label for="engine">사진 인식 방식</label><select id="engine"><option value="paddle">PaddleOCR</option><option value="tesseract">Tesseract</option><option value="compare">두 방식 비교</option></select></div>
   </div>
   <h3>주소 검색</h3>
@@ -125,18 +125,18 @@
   <button id="clearMemory" class="danger-row">기억 지우기</button>
   </div>
   <p id="memoryMessage" class="cache-message" role="status"></p>
-  <h3>최근 주소</h3>
+  <h3>최근 기록</h3>
   <div class="setting-card">
   <div class="setting-row" data-icon="count"><label for="recentLimit">보여 줄 개수</label><input id="recentLimit" type="text" inputmode="numeric" maxlength="3" placeholder="0이면 끔"></div>
   <div class="setting-row" data-icon="lines"><label for="recentLines">보이는 줄 수</label><input id="recentLines" type="text" inputmode="numeric" maxlength="2" placeholder="3 (2~10)"></div>
   <label class="toggle" data-icon="clock"><input type="checkbox" id="recentMidnight">매일 자정에 지우기</label>
-  <button data-open="recentPage" data-icon="list">최근 주소 목록 <span class="row-end"><span class="row-value" id="recentCount"></span><span aria-hidden="true">›</span></span></button>
+  <button data-open="recentPage" data-icon="list">최근 기록 목록 <span class="row-end"><span class="row-value" id="recentCount"></span><span aria-hidden="true">›</span></span></button>
   <button id="clearRecent" class="danger-row">기록 지우기</button>
   </div>
   <p id="recentMessage" class="cache-message" role="status"></p>
   </div>
   <div class="settings-page" data-page="memoryList" data-title="기억 목록" data-back="assist" hidden><div id="memoryItems" class="item-list"></div></div>
-  <div class="settings-page" data-page="recentPage" data-title="최근 주소 목록" data-back="assist" hidden><div id="recentItems" class="item-list"></div></div>
+  <div class="settings-page" data-page="recentPage" data-title="최근 기록 목록" data-back="assist" hidden><div id="recentItems" class="item-list"></div></div>
   <div class="settings-page" data-page="apartments" data-title="아파트 사전설정" data-back="sorting" hidden>
   <div id="apartmentList" class="setting-list"></div>
   <button id="addApartment" class="secondary wide">아파트 추가</button>
@@ -148,17 +148,19 @@
   <h3>동별 칸</h3>
   <div id="aptTable" class="apt-table"></div>
   <button id="aptAddUnit" class="secondary wide">+ 동 추가</button>
-  <div class="rack-actions"><button id="deleteApartment" class="secondary">삭제</button><button id="saveApartment" class="primary">저장</button></div>
+  <div class="rack-actions"><button id="deleteApartment" class="secondary">지우기</button><button id="saveApartment" class="primary">저장</button></div>
   </div>
-  <div class="settings-page cards" data-page="buttons" data-title="노출 버튼 관리" hidden><div id="buttonSettings" class="setting-card"></div></div>
+  <div class="settings-page cards" data-page="buttons" data-title="화면 버튼" hidden><div id="buttonSettings" class="setting-card"></div></div>
   <div class="settings-page" data-page="api" data-title="주소 검색 API" hidden>
   <div class="setting-group"><label for="vworldKey">VWorld 검색 API 키</label><input id="vworldKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="설정 안 됨"></div>
   <div class="setting-group"><label for="kakaoKey">카카오 REST API 키</label><input id="kakaoKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="설정 안 됨"></div>
   <button id="saveKeys" class="primary wide">API 키 저장</button><p id="keyMessage" class="cache-message" role="status"></p>
   </div>
-  <div class="settings-page" data-page="offline" data-title="오프라인 모드" hidden>
-  <label class="toggle"><input type="checkbox" id="offlineMode">오프라인 모드</label>
-  <div class="setting-list"><button id="localDataButton">오프라인 데이터 다운로드 <span class="row-value" id="localDataValue"></span></button></div>
+  <div class="settings-page cards" data-page="offline" data-title="오프라인 모드" hidden>
+  <div class="setting-card">
+  <label class="toggle" data-icon="offline"><input type="checkbox" id="offlineMode">오프라인 모드</label>
+  <button id="localDataButton" data-icon="download">오프라인 데이터 다운로드 <span class="row-end"><span class="row-value" id="localDataValue"></span></span></button>
+  </div>
   <p id="localMessage" class="cache-message" role="status"></p>
   </div>
   <div class="settings-page" data-page="feedback" data-title="의견 보내기" hidden>
@@ -190,7 +192,7 @@
   <div class="cell-buttons"><button id="cellPrevious" class="secondary">이전</button><button id="cellNext" class="primary">저장하고 다음 칸</button></div>
   </div>
   <div class="rack-guide"><button id="rackGuideTitle" class="rack-guide-title">적는 법</button><dl id="rackGuideBody"><dt>우정1길 1~19</dt><dd>1번부터 19번까지 · 양 끝이 홀수면 홀수만</dd><dt>우정1길 28~2</dt><dd>거꾸로 써도 같음 (2~28 짝수만)</dd><dt>누정동 127-3</dt><dd>127번지 부번 3</dd><dt>누정동 127-1~127-13</dt><dd>127번지 부번 1부터 13까지</dd><dt>우정1길 2~20, 우정길 88</dt><dd>여러 주소는 쉼표로</dd><dt>칸을 길게 누르고 끌기</dt><dd>여러 칸에 아파트를 한 번에 지정</dd></dl></div>
-  <div class="rack-actions"><button id="exportRack" class="secondary">내보내기</button><button id="deleteRack" class="secondary">삭제</button></div>
+  <div class="rack-actions"><button id="exportRack" class="secondary">내보내기</button><button id="deleteRack" class="secondary">지우기</button></div>
   <p id="exportMessage" class="cache-message" role="status"></p>
   </div>
   </div>

@@ -25,7 +25,7 @@ const WHATS_NEW = `
 - 송장의 받는분·받는곳·수취인·발송인 같은 칸 이름 글자가 주소 앞에 붙어 인식되던 문제 수정
 - 아이폰에서 주소창을 누르면 화면이 어긋나고 입력칸이 찌그러지던 문제 수정
 - 지역 자료를 받다 끊기면 오프라인 변환이 멈추던 문제 수정
-- 순로구분 연속 스캔: 같은 칸이 이어져도 칸 번호가 깜빡여 읽힌 것을 알 수 있고, 다음 송장을 못 읽으면 이전 칸이 흐려짐
+- 순로구분 연속 인식: 같은 칸이 이어져도 칸 번호가 깜빡여 읽힌 것을 알 수 있고, 다음 송장을 못 읽으면 이전 칸이 흐려짐
 - 영문 주소의 "동·호 확인" 표시가 줄 끝에서 잘리지 않게 앞으로 옮김
 `;
 $('appVersion').textContent = APP_VERSION; $('webVersion').textContent = APP_VERSION;
@@ -272,7 +272,7 @@ async function convertAddress(raw, confirmed = false, source = lastOcr?.text || 
   if (!byName && (!parsed || parseParts(parsed)?.number == null)) { setStatus('도로명·지명과 건물번호·번지를 함께 입력해 주세요.'); return; }
   const id = ++requestSeq;
   awaitingNetwork = false; setMapAddress(null); setConverting(true);
-  setConverted('주소를 확인하고 있습니다…', sortingOn() && shownResult ? 'checking' : ''); setStatus('');
+  setConverted('확인 중…', sortingOn() && shownResult ? 'checking' : ''); setStatus('');
   diag.begin(parsed);
   // The region's own data first (offline too); the servers for anything it cannot tell.
   const local = byName || lookupLocal(localData, parsed);
@@ -301,7 +301,7 @@ async function convertAddress(raw, confirmed = false, source = lastOcr?.text || 
       break;
     }
     case 'offline': signal(false); showLocalResult(true); break;
-    default: signal(false); showLocalResult(!online(), `주소 서버에 연결하지 못했습니다. ${result.message}`);
+    default: signal(false); showLocalResult(!online(), `서버 연결 실패 (${result.message})`);
   }
 }
 
@@ -402,7 +402,7 @@ function countOutcome(ok) {
 function showLocalResult(offline, message = '') {
   awaitingNetwork = true; setMapAddress(null); diag.finish(offline ? '오프라인 · 변환 대기' : '검색 오류', offline ? '오프라인' : message);
   setConverted('주소 인식 완료 · 변환 대기');
-  setStatus(offline ? '오프라인 · 인터넷 연결 후 ‘주소 변환’을 눌러주세요.' : `${message} ‘주소 변환’으로 다시 시도하세요.`);
+  setStatus(offline ? '오프라인 · 인터넷이 되면 ‘주소 변환’을 눌러 주세요.' : `${message} · ‘주소 변환’으로 다시 시도하세요.`);
 }
 
 /** "받는분" printed vertically glues its letters to the address lines; needs the loaded dictionary to tell real names. */
@@ -761,7 +761,7 @@ function bindToggle(id, key, after) {
   $(id).onchange = () => { store.set(key, $(id).checked ? '1' : ''); after?.(); };
 }
 async function updateDictionary(manual) {
-  if (!online()) { if (manual) $('dictionaryMessage').textContent = '인터넷 연결이 필요합니다. 내장 사전으로 인식·교정은 계속 사용할 수 있습니다.'; return; }
+  if (!online()) { if (manual) $('dictionaryMessage').textContent = '인터넷 연결이 필요합니다.'; return; }
   if (manual) $('dictionaryMessage').textContent = '주소 사전을 확인하고 있습니다…';
   try {
     const result = await dictionaryCall('update');
@@ -822,7 +822,7 @@ $('saveNote').onclick = () => saveNote($('noteInput').value);
 $('deleteNote').onclick = () => saveNote('');
 $('closeNote').onclick = () => $('noteDialog').close();
 
-// ---- "최근 주소": under the empty, focused input, newest first; a tap converts it again ----
+// ---- "최근 기록": under the empty, focused input, newest first; a tap converts it again ----
 const recentLines = () => Math.min(10, Math.max(2, parseInt(store.get(KEYS.recentLines), 10) || 3));
 const recentLimit = () => Math.max(0, parseInt(store.get(KEYS.recentLimit), 10) || 0);
 function recentAll() { try { return JSON.parse(store.get(KEYS.recentAddresses) || '[]'); } catch { return []; } }
@@ -900,7 +900,7 @@ function showRecent() {
 }
 function renderRecentPage() {
   const entries = recentEntries();
-  $('recentItems').replaceChildren(...(entries.length ? entries.map(e => recentRow(e, null)) : [Object.assign(document.createElement('p'), {className: 'cache-message', textContent: '최근 주소가 없습니다.'})]));
+  $('recentItems').replaceChildren(...(entries.length ? entries.map(e => recentRow(e, null)) : [Object.assign(document.createElement('p'), {className: 'cache-message', textContent: '최근 기록이 없습니다.'})]));
 }
 $('recentLimit').onchange = () => {
   const limit = Math.min(999, Math.max(0, parseInt($('recentLimit').value, 10) || 0));
@@ -914,14 +914,14 @@ $('recentLines').onchange = () => {
   settingsValues(); showRecent();
 };
 $('recentMidnight').onchange = () => store.set(KEYS.recentMidnight, $('recentMidnight').checked ? '1' : '');
-$('clearRecent').onclick = () => { if (!confirm('최근 기록을 모두 지울까요?')) return; saveRecent([]); $('recentMessage').textContent = '최근 주소를 지웠습니다.'; settingsValues(); showRecent(); };
+$('clearRecent').onclick = () => { if (!confirm('최근 기록을 모두 지울까요?')) return; saveRecent([]); $('recentMessage').textContent = '최근 기록을 지웠습니다.'; settingsValues(); showRecent(); };
 
 /** "기억 목록": corrections ("우저4긱 → 우정4길") and names, newest first; × forgets one. */
 function renderMemoryList() {
   const item = (text, forget) => {
     const row = document.createElement('div'), remove = document.createElement('button');
     row.className = 'memory-item'; row.append(Object.assign(document.createElement('span'), {textContent: text}));
-    remove.className = 'secondary'; remove.textContent = '삭제'; remove.setAttribute('aria-label', `${text} 삭제`);
+    remove.className = 'secondary'; remove.textContent = '지우기'; remove.setAttribute('aria-label', `${text} 지우기`);
     remove.onclick = () => { forget(); store.set(KEYS.memory, memory.serialize()); renderMemoryList(); settingsValues(); };
     row.append(remove);
     return row;
@@ -1364,7 +1364,7 @@ function saveCell() {
   const text = $('cellLabel').value.trim(), cell = editingCell;
   const others = overlaps(rack, cell, text);
   changeRack(rack.id, r => { r.labels = r.labels || {}; if (text) r.labels[cell] = text; else delete r.labels[cell]; });
-  $('cellMessage').textContent = others.length ? `${others.join(', ')}번 칸과 겹칩니다` : '';
+  $('cellMessage').textContent = others.length ? `${others.join(', ')}칸과 겹칩니다` : '';
   return true;
 }
 function chooseCell(cell) {
@@ -1506,7 +1506,7 @@ function renderAssign() {
   if (!rack || !configured(rack)) { $('assignGrid').replaceChildren(); return; }
   renderGrid($('assignGrid'), rack, 0, cell => {
     changeRack(rack.id, r => { r.labels = r.labels || {}; const old = String(r.labels[cell] || '').trim(); r.labels[cell] = old ? `${old}, ${assignPieceText}` : assignPieceText; });
-    $('settingsDialog').close(); showSorting(); setStatus(`${cell}칸에 추가했습니다`);
+    $('settingsDialog').close(); showSorting(); setStatus(`${cell}칸에 넣었습니다`);
   });
 }
 showSorting();
@@ -1655,7 +1655,7 @@ window.addEventListener('pagehide', () => { stopCamera(); cancel(); });
 function network() {
   $('offlineState').textContent = navigator.onLine ? '온라인' : '오프라인';
   if (!online() && converting) { requestSeq++; setConverting(false); showLocalResult(true); }
-  else if (awaitingNetwork) setStatus(online() ? '인터넷이 연결되었습니다. ‘주소 변환’을 눌러 선택한 주소를 확인·변환하세요.' : '오프라인 · 인터넷 연결 후 ‘주소 변환’을 눌러주세요.');
+  else if (awaitingNetwork) setStatus(online() ? '인터넷 연결됨 · ‘주소 변환’을 눌러 주세요.' : '오프라인 · 인터넷이 되면 ‘주소 변환’을 눌러 주세요.');
   else if (!online() && !$('statusText').textContent) setStatus(offlineStatus());
   else if (online() && /^오프라인/.test($('statusText').textContent)) setStatus('');
 }
